@@ -29,10 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--prompt",
         help="Plain text prompt. Only valid for /generate.",
     )
-    request.add_argument("--api-key", help="API key passed as a bearer token.")
     request.add_argument(
-        "--api-key-env",
-        help="Environment variable name used to load the API key.",
+        "--api-key",
+        default=None,
+        help="API key passed as a bearer token. Falls back to API_KEY if unset.",
     )
     request.add_argument(
         "--timeout-ms",
@@ -42,9 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     request.add_argument(
         "--save-output",
+        default=None,
         help="Optional path to save the normalized result as JSON.",
     )
-    request.add_argument("--model", help="Model name to include in the request body.")
+    request.add_argument(
+        "--model",
+        default="chat-model",
+        help="Model name to include in the request body. Default: chat-model.",
+    )
     request.add_argument(
         "--max-new-tokens",
         type=int,
@@ -53,7 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     request.add_argument(
         "--temperature",
         type=float,
-        help="Sampling temperature.",
+        default=0.6,
+        help="Sampling temperature. Default: 0.6.",
     )
     request.add_argument(
         "--top-p",
@@ -87,10 +93,10 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Path to a replay .pkl file or a directory containing multiple .pkl files.",
     )
-    replay.add_argument("--api-key", help="API key passed as a bearer token.")
     replay.add_argument(
-        "--api-key-env",
-        help="Environment variable name used to load the API key.",
+        "--api-key",
+        default=None,
+        help="API key passed as a bearer token. Falls back to API_KEY if unset.",
     )
     replay.add_argument(
         "--timeout-ms",
@@ -100,6 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     replay.add_argument(
         "--save-output",
+        type=str,
+        default=None,
         help="Optional path to save per-request replay results as JSONL.",
     )
     replay.add_argument(

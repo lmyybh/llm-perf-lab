@@ -15,6 +15,8 @@ from llmperf.output.formatter import (
     render_terminal,
     save_output,
 )
+
+
 def _error_result(error: LLMPerfError) -> NormalizedResult:
     """把异常对象转换成统一的错误结果结构。"""
     return NormalizedResult(
@@ -28,14 +30,14 @@ def _error_result(error: LLMPerfError) -> NormalizedResult:
 
 
 def _build_input_view(
-    endpoint_type: str, config, payload: dict, args
+    endpoint_type: str, config, payload: dict, args, api_key: str | None
 ) -> dict[str, object]:
     """构造最终终端输出里的 INPUT 区块内容。"""
     api_key_source = "none"
     if args.api_key:
         api_key_source = "provided"
-    elif args.api_key_env:
-        api_key_source = f"env:{args.api_key_env}"
+    elif api_key is not None:
+        api_key_source = "env:API_KEY"
 
     input_view: dict[str, object] = {
         "endpoint": config.endpoint,
@@ -64,10 +66,10 @@ def run_request_command(args) -> int:
     }
     try:
         endpoint_type, config = build_request_config(args)
-        api_key = resolve_api_key(args.api_key, args.api_key_env)
+        api_key = resolve_api_key(args.api_key)
         adapter = get_adapter(endpoint_type)
         payload = adapter.build_payload(config)
-        input_view = _build_input_view(endpoint_type, config, payload, args)
+        input_view = _build_input_view(endpoint_type, config, payload, args, api_key)
         stream_sink = sys.stdout
 
         def _on_stream_text(text: str) -> None:

@@ -22,7 +22,7 @@ def run_replay_command(args) -> int:
         if args.max_concurrency is not None and args.max_concurrency <= 0:
             raise InputError("--max-concurrency must be > 0")
 
-        api_key = resolve_api_key(args.api_key, args.api_key_env)
+        api_key = resolve_api_key(args.api_key)
         requests = load_replay_requests(args.dump_path, limit=args.num_requests)
         # replay 统一以命令行指定的 stream 开关发送，避免混用 dump 内历史配置。
         for request in requests:
