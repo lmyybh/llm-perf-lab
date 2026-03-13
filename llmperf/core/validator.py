@@ -82,6 +82,7 @@ def build_request_config(args) -> tuple[str, RequestConfig]:
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         top_p=args.top_p,
+        disable_thinking=args.disable_thinking,
         stream=args.stream,
         messages=messages,
         prompt=prompt,

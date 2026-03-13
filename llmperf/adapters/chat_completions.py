@@ -28,6 +28,8 @@ class ChatCompletionsAdapter:
             payload["temperature"] = config.temperature
         if config.top_p is not None:
             payload["top_p"] = config.top_p
+        if config.disable_thinking:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         return payload
 
     def parse_response(

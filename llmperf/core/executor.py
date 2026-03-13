@@ -342,7 +342,7 @@ async def execute_payload_request_async(
     start = time.perf_counter()
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             if stream:
                 async with client.stream(
                     "POST", endpoint, json=payload, headers=headers

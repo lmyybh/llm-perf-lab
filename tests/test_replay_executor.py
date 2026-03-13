@@ -19,12 +19,14 @@ class ReplayExecutorTest(unittest.TestCase):
             ReplayRequest(
                 source_file="a.pkl",
                 source_index=0,
+                endpoint_type="generate",
                 payload={"input_ids": [1]},
                 stream=False,
             ),
             ReplayRequest(
                 source_file="a.pkl",
                 source_index=1,
+                endpoint_type="generate",
                 payload={"input_ids": [2]},
                 stream=False,
             ),
@@ -105,6 +107,7 @@ class ReplayExecutorTest(unittest.TestCase):
             ReplayRequest(
                 source_file="a.pkl",
                 source_index=i,
+                endpoint_type="generate",
                 payload={"input_ids": [i]},
                 stream=False,
             )

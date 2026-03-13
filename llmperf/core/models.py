@@ -15,6 +15,7 @@ class RequestConfig:
     max_new_tokens: int | None
     temperature: float | None
     top_p: float | None
+    disable_thinking: bool
     stream: bool
     messages: list[dict[str, Any]] | None
     prompt: str | None
@@ -45,6 +46,7 @@ class ReplayRequest:
 
     source_file: str
     source_index: int
+    endpoint_type: str
     payload: dict[str, Any]
     stream: bool
 

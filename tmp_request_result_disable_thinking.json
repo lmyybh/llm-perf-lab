@@ -1,0 +1,12 @@
+{
+  "status": "ok",
+  "latency_ms": 1063,
+  "output_text": "资深财务主管，经金蝶 K3Cloud 系统上线与税务筹划落地，累计融资 400 万，主导高新复审及年报披露，服务新三板企业。",
+  "usage": {
+    "prompt_tokens": 1324,
+    "total_tokens": 1363,
+    "completion_tokens": 39,
+    "prompt_tokens_details": null,
+    "reasoning_tokens": 0
+  }
+}

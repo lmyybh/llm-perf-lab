@@ -17,7 +17,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from llmperf.adapters.generate import GenerateAdapter
+from llmperf.adapters.registry import get_adapter
 from llmperf.core.errors import HttpError, LLMPerfError
 from llmperf.core.executor import ResponseEnvelope, execute_payload_request_async
 from llmperf.core.models import ReplayItemResult, ReplayRequest, RequestConfig
@@ -207,18 +207,54 @@ async def execute_replay_request_async(
     request_start_time: float | None = None,
 ) -> ReplayItemResult:
     """异步执行单个 replay 请求。"""
-    adapter = GenerateAdapter()
+    adapter = get_adapter(request.endpoint_type)
     config = RequestConfig(
         endpoint=endpoint,
         api_key=api_key,
         timeout_ms=timeout_ms,
-        model=None,
-        max_new_tokens=None,
-        temperature=None,
-        top_p=None,
+        model=(
+            request.payload.get("model")
+            if isinstance(request.payload.get("model"), str)
+            else None
+        ),
+        max_new_tokens=(
+            request.payload.get("max_completion_tokens")
+            if isinstance(request.payload.get("max_completion_tokens"), int)
+            else (
+                request.payload.get("sampling_params", {}).get("max_new_tokens")
+                if isinstance(request.payload.get("sampling_params"), dict)
+                else None
+            )
+        ),
+        temperature=(
+            request.payload.get("temperature")
+            if isinstance(request.payload.get("temperature"), (int, float))
+            else (
+                request.payload.get("sampling_params", {}).get("temperature")
+                if isinstance(request.payload.get("sampling_params"), dict)
+                else None
+            )
+        ),
+        top_p=(
+            request.payload.get("top_p")
+            if isinstance(request.payload.get("top_p"), (int, float))
+            else (
+                request.payload.get("sampling_params", {}).get("top_p")
+                if isinstance(request.payload.get("sampling_params"), dict)
+                else None
+            )
+        ),
         stream=request.stream,
-        messages=None,
-        prompt=None,
+        messages=(
+            request.payload.get("messages")
+            if isinstance(request.payload.get("messages"), list)
+            else None
+        ),
+        prompt=(
+            request.payload.get("text")
+            if isinstance(request.payload.get("text"), str)
+            else None
+        ),
     )
     try:
         response = await execute_payload_request_async(

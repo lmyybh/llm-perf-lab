@@ -178,7 +178,7 @@ llmperf replay \
 - `--qps`
 - `--max-concurrency`
 - `--timeout-ms`
-- `--api-key` / `--api-key-env`
+- `--api-key`
 - `--save-output`
 - `--num-requests`
 

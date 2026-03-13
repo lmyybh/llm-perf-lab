@@ -96,6 +96,7 @@ def load_replay_requests(
                 ReplayRequest(
                     source_file=os.path.basename(path),
                     source_index=index,
+                    endpoint_type="generate",
                     payload=replay_payload,
                     stream=stream,
                 )

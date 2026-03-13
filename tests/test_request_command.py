@@ -26,6 +26,7 @@ class RequestCommandTest(unittest.TestCase):
             max_new_tokens=16,
             temperature=0.6,
             top_p=None,
+            disable_thinking=False,
             stream=False,
         )
         response = ResponseEnvelope(
@@ -59,6 +60,7 @@ class RequestCommandTest(unittest.TestCase):
             max_new_tokens=16,
             temperature=0.6,
             top_p=None,
+            disable_thinking=False,
             stream=False,
         )
         with patch(
@@ -85,6 +87,7 @@ class RequestCommandTest(unittest.TestCase):
             max_new_tokens=16,
             temperature=0.6,
             top_p=None,
+            disable_thinking=False,
             stream=False,
         )
         response = ResponseEnvelope(
