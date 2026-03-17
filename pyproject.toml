@@ -1,13 +1,14 @@
 [project]
 name = "llmperf"
 version = "0.1.0"
-description = ""
+description = "A lightweight CLI for sending OpenAI-compatible chat requests and observing streaming output."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "typer",
     "aiohttp",
     "pydantic",
+    "typing-extensions",
 ]
 
 [build-system]
@@ -16,3 +17,6 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 llmperf = "llmperf.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["llmperf*"]
