@@ -1,31 +1,71 @@
-import aiohttp
+"""Async helpers for interacting with OpenAI-compatible APIs."""
+
 import asyncio
 import json
 import time
-from typing import List
+from typing import Any
 
-from .data import OpenAIRequestOutput, OpenAIRequestContext
-from .listener import notify, OpenAIBaseListener
+import aiohttp
+
+from .data import (
+    OpenAIRequestContext,
+    OpenAIRequestOutput,
+    RequestHeaders,
+    RequestPayload,
+)
+from .listener import OpenAIBaseListener, notify
 
 
-def _create_client_session(timeout: float = 300):
+def _create_client_session(timeout: float = 300) -> aiohttp.ClientSession:
+    """Create an aiohttp client session with project defaults.
+
+    Args:
+        timeout (float): Total request timeout in seconds.
+
+    Returns:
+        aiohttp.ClientSession: A configured ``aiohttp.ClientSession`` instance.
+    """
     return aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=timeout),
         read_bufsize=10 * 1024**2,
     )
 
 
-def remove_prefix(text: str, prefix: str):
+def remove_prefix(text: str, prefix: str) -> str:
+    """Remove a prefix from text when it is present.
+
+    Args:
+        text (str): Source text to inspect.
+        prefix (str): Prefix to remove.
+
+    Returns:
+        str: ``text`` without the prefix when it matches, otherwise the
+        original string unchanged.
+    """
     return text[len(prefix) :] if text.startswith(prefix) else text
 
 
 async def send_request(
-    url,
-    payload,
-    headers,
+    url: str,
+    payload: RequestPayload,
+    headers: RequestHeaders,
     timeout: float = 300,
-    listeners: List[OpenAIBaseListener] | None = None,
-):
+    listeners: list[OpenAIBaseListener] | None = None,
+) -> OpenAIRequestOutput:
+    """Send a chat completion request and collect response metrics.
+
+    Args:
+        url (str): Target OpenAI-compatible endpoint URL.
+        payload (RequestPayload): JSON request body sent to the endpoint.
+        headers (RequestHeaders): HTTP headers included with the request.
+        timeout (float): Total request timeout in seconds.
+        listeners (list[OpenAIBaseListener] | None): Optional request lifecycle
+            listeners.
+
+    Returns:
+        OpenAIRequestOutput: The populated request output including content,
+        error state, and timing metrics.
+    """
     ctx = OpenAIRequestContext(
         url=url,
         payload=payload,
@@ -46,7 +86,7 @@ async def send_request(
 
                 # 非流式
                 if not ctx.result.stream:
-                    response_json = await response.json()
+                    response_json: dict[str, Any] = await response.json()
 
                     ctx.result.prompt_tokens = response_json.get("usage", {}).get(
                         "prompt_tokens", 0

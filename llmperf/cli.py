@@ -1,3 +1,5 @@
+"""CLI entrypoints for llmperf."""
+
 import typer
 import asyncio
 from pathlib import Path
@@ -9,7 +11,8 @@ app = typer.Typer(add_completion=False)
 
 
 @app.command()
-def test():
+def test() -> None:
+    """Run a minimal smoke test for the CLI."""
     print("test ok")
 
 
@@ -65,7 +68,24 @@ def request(
         bool,
         typer.Option(help="Whether to request a streaming response."),
     ] = True,
-):
+) -> None:
+    """Send a single chat completion request from the command line.
+
+    Args:
+        messages (str | None): Chat messages encoded as a JSON array string.
+        file (Path | None): Path to a JSON file containing chat messages.
+        user (str | None): User prompt used to build a simple chat message list.
+        system (str | None): Optional system prompt paired with ``user``.
+        url (str): Target OpenAI-compatible chat completions endpoint.
+        model (str): Model name sent in the request payload.
+        temperature (float): Sampling temperature for the request.
+        max_tokens (int | None): Optional maximum number of output tokens.
+        enable_thinking (bool): Whether to enable server-side thinking behavior.
+        stream (bool): Whether to request streaming output.
+
+    Raises:
+        typer.Exit: Raised with exit code ``1`` when the request fails.
+    """
     result = asyncio.run(
         request_v1_chat(
             messages,
