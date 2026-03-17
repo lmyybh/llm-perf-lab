@@ -5,7 +5,8 @@ import asyncio
 from pathlib import Path
 from typing_extensions import Annotated
 
-from llmperf.commands.request import request_v1_chat
+from llmperf.commands.request import openai_chat
+from llmperf.commands.bench import send_by_qps
 
 app = typer.Typer(add_completion=False)
 
@@ -89,7 +90,7 @@ def request(
         typer.Exit: Raised with exit code ``1`` when the request fails.
     """
     result = asyncio.run(
-        request_v1_chat(
+        openai_chat(
             messages,
             file,
             user,
@@ -106,6 +107,11 @@ def request(
 
     if result.error:
         raise typer.Exit(code=1)
+
+
+@app.command("bench")
+def bench():
+    asyncio.run(send_by_qps(2))
 
 
 if __name__ == "__main__":

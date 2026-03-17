@@ -45,7 +45,7 @@ def remove_prefix(text: str, prefix: str) -> str:
     return text[len(prefix) :] if text.startswith(prefix) else text
 
 
-async def send_request(
+async def openai_chat_request(
     url: str,
     payload: RequestPayload,
     headers: RequestHeaders,

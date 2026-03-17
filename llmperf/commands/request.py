@@ -9,7 +9,7 @@ import typer
 
 from llmperf.core.data import ChatMessages, OpenAIRequestOutput, RequestHeaders
 from llmperf.core.listener import OpenAILogListener
-from llmperf.core.openai import send_request
+from llmperf.core.openai import openai_chat_request
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 DEFAULT_SYSTEM_PROMPT = "你是一个知识丰富的助手"
@@ -197,7 +197,7 @@ def resolve_messages(opts: MessagesInputOptions) -> ChatMessages:
     return messages
 
 
-async def request_v1_chat(
+async def openai_chat(
     messages_json: str | None,
     file: Path | None,
     user: str | None,
@@ -248,7 +248,7 @@ async def request_v1_chat(
         "chat_template_kwargs": {"enable_thinking": enable_thinking},
     }
 
-    result = await send_request(
+    result = await openai_chat_request(
         url=url,
         payload=payload,
         headers=headers,
