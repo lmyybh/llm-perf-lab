@@ -61,13 +61,14 @@ def request(
     enable_thinking: Annotated[
         bool,
         typer.Option(
-            "--enable-thinking/--disable-thinking", help="Whether to enable think."
+            "--enable-thinking/--disable-thinking", help="Whether to enable thinking."
         ),
     ] = True,
     stream: Annotated[
         bool,
         typer.Option(help="Whether to request a streaming response."),
     ] = True,
+    timeout: Annotated[float, typer.Option(help="Set timeout for request.")] = 300.0,
 ) -> None:
     """Send a single chat completion request from the command line.
 
@@ -82,6 +83,7 @@ def request(
         max_tokens (int | None): Optional maximum number of output tokens.
         enable_thinking (bool): Whether to enable server-side thinking behavior.
         stream (bool): Whether to request streaming output.
+        timeout (float): Set timeout for request.
 
     Raises:
         typer.Exit: Raised with exit code ``1`` when the request fails.
@@ -98,6 +100,7 @@ def request(
             max_tokens,
             enable_thinking,
             stream,
+            timeout,
         )
     )
 
