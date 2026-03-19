@@ -2,7 +2,7 @@ import typer
 import json
 from pathlib import Path
 
-from .data import OpenAIRequestInput
+from llmperf.core.data import OpenAIRequestInput
 
 
 def check_file(file: Path, suffixs=None):

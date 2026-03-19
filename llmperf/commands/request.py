@@ -148,12 +148,12 @@ class RequestCommandArgs(BaseModel):
         has_file = self.file is not None
         has_user = self.user is not None and self.user.strip() != ""
 
-        selected = [
+        selected: list[tuple[InputMode, bool]] = [
             ("messages", has_messages),
             ("file", has_file),
             ("user", has_user),
         ]
-        enabled_modes = [name for name, ok in selected if ok]
+        enabled_modes: list[InputMode] = [name for name, ok in selected if ok]
 
         if len(enabled_modes) == 0:
             raise typer.BadParameter(

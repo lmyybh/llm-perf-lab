@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .data import OpenAIRequestContext
+from llmperf.core.data import OpenAIRequestContext
 
 
 class OpenAIBaseListener:

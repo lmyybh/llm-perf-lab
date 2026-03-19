@@ -7,7 +7,7 @@ from typing import Callable, Optional
 import aiohttp
 
 from llmperf.core.models import LLMRequest, LLMResponse, ChatCompletionOutput
-from .base import LLMBackend
+from llmperf.backends.base import LLMBackend
 
 
 def _create_client_session(timeout: float = 300.0) -> aiohttp.ClientSession:

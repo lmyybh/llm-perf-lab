@@ -7,13 +7,13 @@ from typing import Any
 
 import aiohttp
 
-from .data import (
+from llmperf.core.data import (
     OpenAIRequestContext,
     OpenAIRequestOutput,
     RequestHeaders,
     RequestPayload,
 )
-from .listener import OpenAIBaseListener, notify
+from llmperf.core.listener import OpenAIBaseListener, notify
 
 
 def _create_client_session(timeout: float = 300) -> aiohttp.ClientSession:
