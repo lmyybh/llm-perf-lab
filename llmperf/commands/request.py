@@ -1,12 +1,14 @@
 """Helpers for building and running the request command."""
 
 import asyncio
-import typer
 import json
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
+import typer
 from pydantic import BaseModel
+from rich.console import Console
+from rich.table import Table
 
 from llmperf.core.models import (
     ChatCompletionInput,
@@ -19,6 +21,7 @@ from llmperf.backends.openai import OpenAIChatBackend
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
 InputMode = Literal["messages", "file", "user"]
+console = Console()
 
 
 def handle_messages_mode(messages_json: str) -> ChatCompletionInput:
@@ -231,6 +234,127 @@ def create_backend(args: RequestCommandArgs) -> OpenAIChatBackend:
     return OpenAIChatBackend(timeout=args.timeout)
 
 
+def create_chunk_printer(stream: bool) -> Optional[Callable[[str], None]]:
+    """Create a chunk printer for streaming output.
+
+    Args:
+        stream (bool): Whether the request uses streaming output.
+
+    Returns:
+        Optional[Callable[[str], None]]: A chunk printer for streamed chunks,
+        otherwise ``None``.
+    """
+    if not stream:
+        return None
+
+    def _print_chunk(chunk: str) -> None:
+        """Print one streamed response chunk.
+
+        Args:
+            chunk (str): Incremental text returned by the backend.
+
+        Returns:
+            None: This function writes one chunk to the terminal.
+        """
+        console.print(chunk, end="")
+
+    return _print_chunk
+
+
+def render_header(stream: bool) -> None:
+    """Render the request mode header.
+
+    Args:
+        stream (bool): Whether the request uses streaming output.
+
+    Returns:
+        None: This function writes the header to the terminal.
+    """
+    console.rule("Stream") if stream else console.rule("No-Stream")
+
+
+def build_response_summary(response: LLMResponse) -> Table:
+    """Build a summary table for the aggregated response.
+
+    Args:
+        response (LLMResponse): Aggregated backend response.
+
+    Returns:
+        Table: A terminal table containing key response metadata.
+    """
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column("Key", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+
+    table.add_row("Status", str(response.status_code))
+
+    if response.model:
+        table.add_row("Model", response.model)
+
+    table.add_row("Latency", f"{response.latency:.2f} s")
+
+    if response.ttft > 0:
+        table.add_row("TTFT", f"{(response.ttft*1000):.2f} ms")
+
+    if response.tpot > 0:
+        table.add_row("TPOT", f"{(response.tpot*1000):.2f} ms")
+
+    if response.prompt_tokens > 0:
+        table.add_row("Prompt Tokens", str(response.prompt_tokens))
+
+    if response.completion_tokens > 0:
+        table.add_row("Completion Tokens", str(response.completion_tokens))
+
+    if response.finish_reason:
+        table.add_row("Finish Reason", response.finish_reason)
+
+    return table
+
+
+def get_response_text(response: LLMResponse) -> str:
+    """Build the visible response text for non-stream output.
+
+    Args:
+        response (LLMResponse): Aggregated backend response.
+
+    Returns:
+        str: Reasoning text followed by visible content when present.
+    """
+    text = response.output.reasoning_content or ""
+    if text:
+        text += "\n"
+    text += response.output.content or ""
+    return text
+
+
+def render_response(response: LLMResponse, stream: bool) -> None:
+    """Render the response body, errors, and summary sections.
+
+    Args:
+        response (LLMResponse): Aggregated backend response.
+        stream (bool): Whether the response body was streamed.
+
+    Returns:
+        None: This function writes the response to the terminal.
+    """
+    if stream:
+        console.print()
+    else:
+        text = get_response_text(response)
+        if text:
+            console.print(text)
+
+    console.print()
+
+    if response.error:
+        console.rule("Error")
+        console.print(response.error, style="bold red")
+
+    console.rule("Response")
+    console.print(build_response_summary(response))
+    console.rule()
+
+
 def run_request_command(args: RequestCommandArgs) -> LLMResponse:
     """Run the request command and return the aggregated response.
 
@@ -242,17 +366,16 @@ def run_request_command(args: RequestCommandArgs) -> LLMResponse:
     """
     backend = create_backend(args)
 
+    render_header(args.stream)
+
     response = asyncio.run(
         backend.send(
             url=args.url,
             request=args.build_llm_request(),
-            on_chunk=lambda x: print(x, end="", flush=True),
+            on_chunk=create_chunk_printer(args.stream),
         )
     )
 
-    if not args.stream:
-        print(response.output.content or "")
-    else:
-        print()
+    render_response(response, stream=args.stream)
 
     return response

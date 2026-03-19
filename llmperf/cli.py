@@ -73,9 +73,9 @@ def request(
         ),
     ] = None,
     model: Annotated[
-        str,
+        Optional[str],
         typer.Option(help="Model name sent in the request payload."),
-    ] = "unknown",
+    ] = None,
     rid: Annotated[
         Optional[str],
         typer.Option(help="Optional request identifier included in the payload."),

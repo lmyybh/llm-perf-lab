@@ -2,11 +2,10 @@
 
 import json
 import time
+import aiohttp
 from typing import Callable, Optional
 
-import aiohttp
-
-from llmperf.core.models import LLMRequest, LLMResponse, ChatCompletionOutput
+from llmperf.core.models import LLMRequest, LLMResponse
 from llmperf.backends.base import LLMBackend
 
 
@@ -37,6 +36,32 @@ def remove_prefix(text: str, prefix: str) -> str:
         original string unchanged.
     """
     return text[len(prefix) :] if text.startswith(prefix) else text
+
+
+async def _read_error_response(response: aiohttp.ClientResponse) -> str:
+    """Read and normalize an HTTP error response body.
+
+    Args:
+        response (aiohttp.ClientResponse): HTTP response with an error status.
+
+    Returns:
+        str: A readable error message containing status and response body.
+    """
+    try:
+        body = await response.text()
+    except Exception as exc:
+        return f"HTTP {response.status}: failed to read error body: {exc}"
+
+    body = body.strip()
+    if not body:
+        return f"HTTP {response.status}: empty error response"
+
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return f"HTTP {response.status}: {body}"
+
+    return f"HTTP {response.status}: {json.dumps(parsed, ensure_ascii=False)}"
 
 
 class OpenAIChatBackend(LLMBackend):
@@ -77,10 +102,9 @@ class OpenAIChatBackend(LLMBackend):
         Returns:
             dict[str, object]: JSON payload sent to the backend.
         """
-        payload: dict[str, object] = {
-            "model": request.model,
-            "stream": request.stream,
-        }
+        payload: dict[str, object] = {"stream": request.stream}
+        if request.model is not None:
+            payload["model"] = request.model
 
         payload.update(request.input.model_dump(exclude_none=True))
         payload.update(request.sampling_params.model_dump())
@@ -208,22 +232,29 @@ class OpenAIChatBackend(LLMBackend):
         headers = {"Content-Type": "application/json"}
         payload = self._build_payload(request)
 
+        result.start_time = time.perf_counter()
         try:
             async with _create_client_session(timeout=self.timeout) as session:
-
-                result.start_time = time.perf_counter()
-
                 async with session.post(
                     url=url, json=payload, headers=headers
                 ) as response:
                     result.status_code = response.status
-                    response.raise_for_status()
+
+                    if response.status >= 400:
+                        result.error = await _read_error_response(response)
+                        return result
 
                     if not request.stream:
                         await self._parse_no_stream_response(response, result)
                     else:
                         await self._parse_stream_response(response, result, on_chunk)
-
+        except aiohttp.ClientResponseError as exc:
+            result.status_code = exc.status
+            result.error = str(exc)
+        except aiohttp.ClientError as exc:
+            result.error = f"Network error: {exc}"
+        except Exception as exc:
+            result.error = f"Unexpected error: {type(exc).__name__}: {exc}"
         finally:
             result.finish_time = time.perf_counter()
             result.latency = result.finish_time - result.start_time

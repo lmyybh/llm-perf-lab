@@ -192,7 +192,7 @@ class LLMResponse(BaseModel):
         itls (list[float]): Inter-token latencies in seconds.
     """
 
-    status_code: int = 200
+    status_code: int = 0
     error: Optional[str] = None
     finish_reason: Optional[str] = None
 
