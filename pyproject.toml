@@ -7,7 +7,6 @@ requires-python = ">=3.10"
 dependencies = [
     "typer",
     "aiohttp",
-    "pydantic",
     "typing-extensions",
 ]
 

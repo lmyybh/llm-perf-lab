@@ -54,4 +54,69 @@ llmperf request \
   --stream
 ```
 
+## 重构 TODO
+
+### 目标
+
+- 将 `request` 与 `bench` 的公共能力下沉为通用模型与 backend 抽象。
+- 让 `bench` 只负责调度与统计，不直接依赖 OpenAI 协议细节。
+- 为后续接入非 OpenAI 规范接口预留清晰扩展点。
+
+### 分步重构
+
+1. 新建 `llmperf/core/models.py`
+   - 定义 `ChatRequest`、`ChatResult`、`BenchConfig`。
+   - 高层模块后续统一依赖这些中性模型。
+
+2. 新建 `llmperf/backends/base.py`
+   - 定义 `ChatBackend` 抽象接口。
+   - 让 `request` / `bench` 依赖抽象而不是具体实现。
+
+3. 新建 `llmperf/backends/openai.py`
+   - 把当前 OpenAI 协议相关逻辑收敛到这里。
+   - 负责请求构造、HTTP 调用、流式与非流式响应解析。
+
+4. 重构 `llmperf/commands/request.py`
+   - 保留现有消息解析逻辑。
+   - 改为先组装 `ChatRequest`，再调用 `ChatBackend`。
+
+5. 重构 `llmperf/commands/bench.py`
+   - 改为接收 `backend`、`BenchConfig`、`list[ChatRequest]`。
+   - 只负责调度、限流、收集结果，不处理协议细节。
+
+6. 重构 `llmperf/cli.py`
+   - 保留 Typer 参数声明。
+   - 在命令函数内部组装配置对象并选择 backend。
+
+7. 拆分数据集读取逻辑
+   - 新增 `llmperf/datasets/` 目录。
+   - 将现有 `read_zss_file()` 移到独立 reader 中。
+
+8. 增加数据集选择入口
+   - 按格式选择 reader。
+   - 避免 bench 主流程依赖某一种样本格式。
+
+9. 新增汇总统计模块
+   - 新建 `llmperf/core/summary.py`。
+   - 输出成功率、失败率、P50/P95/P99 latency、TTFT、吞吐等指标。
+
+10. 清理命名与依赖方向
+    - 将高层通用代码中的 OpenAI 命名逐步替换为中性命名。
+    - 保持协议特定逻辑只存在于 `backends/openai.py`。
+
+11. 最后增加第二种 backend 做验证
+    - 用一个非 OpenAI 接口验证抽象是否合理。
+    - 理想状态下只需新增 backend 文件并注册工厂。
+
+### 建议顺序
+
+1. `core/models.py`
+2. `backends/base.py`
+3. `backends/openai.py`
+4. `commands/request.py`
+5. `commands/bench.py`
+6. `core/summary.py`
+7. `datasets/`
+8. `cli.py`
+9. 第二个 backend 验证
 

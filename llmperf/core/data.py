@@ -3,15 +3,14 @@
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
-from pydantic import BaseModel
-
 ChatMessage: TypeAlias = dict[str, str]
 ChatMessages: TypeAlias = list[ChatMessage]
 RequestPayload: TypeAlias = dict[str, Any]
 RequestHeaders: TypeAlias = dict[str, str]
 
 
-class OpenAIRequestInput(BaseModel):
+@dataclass
+class OpenAIRequestInput:
     """Represents the request payload sent to a chat completions endpoint.
 
     Attributes:
@@ -24,9 +23,16 @@ class OpenAIRequestInput(BaseModel):
 
     messages: ChatMessages
     model: str = "unknown"
+    stream: bool = True
+    tools: list | None = None
+    rid: str | None = None
     temperature: float = 1.0
     max_tokens: int = 100
-    stream: bool = True
+    seed: int | None = None
+    frequency_penalty: float = 0.1
+    repetition_penalty: float = 1.0
+    presence_penalty: float = 0.0
+    chat_template_kwargs: dict | None = None
 
 
 @dataclass

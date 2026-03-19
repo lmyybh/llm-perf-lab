@@ -6,7 +6,7 @@ from pathlib import Path
 from typing_extensions import Annotated
 
 from llmperf.commands.request import openai_chat
-from llmperf.commands.bench import send_by_qps
+from llmperf.commands.bench import bench_requests
 
 app = typer.Typer(add_completion=False)
 
@@ -111,7 +111,17 @@ def request(
 
 @app.command("bench")
 def bench():
-    asyncio.run(send_by_qps(2))
+    results = asyncio.run(
+        bench_requests(
+            url="http://172.18.16.59:8000/v1/chat/completions",
+            file=Path(
+                "/data/cgl/download/datasets/boss/zhishanshan/qwen235-2507-fp8/raw_request/request_235b_20min.jsonl"
+            ),
+            num_requests=18000,
+            qps=2,
+            max_concurrency=None,
+        )
+    )
 
 
 if __name__ == "__main__":
