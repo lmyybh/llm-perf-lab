@@ -1,27 +1,28 @@
-# AGENTS.md
+### 类型注解
 
-## Codex Working Conventions
+- 编辑 Python 代码时，为新增或修改的函数、方法和数据结构补充明确的类型注解。
+- 当具体结构已知时，优先使用精确类型，而不是宽泛的 `dict`、`list` 或 `Any`。
+- 为所有函数和方法添加返回类型注解，过程型函数也应显式标注 `-> None`。
+- 如果同一种结构化载荷在多个地方出现，应提取可复用的类型别名，避免重复使用宽松的容器类型。
+- 除非任务明确要求修改行为，否则在添加或细化类型注解时应保持运行时行为不变。
 
-### Type Annotations
+### 文档字符串
 
-- When editing Python code, add explicit type annotations for new or modified functions, methods, and data structures.
-- Prefer precise types over broad `dict`, `list`, or `Any` when the concrete shape is known.
-- Add return type annotations for all functions and methods, including `-> None` for procedures.
-- When a structured payload appears in multiple places, extract a reusable type alias instead of repeating loose container types.
-- Keep runtime behavior unchanged when adding or refining type annotations unless the task explicitly requires a behavioral change.
+- 为所有新增或修改的数据结构、函数和类补充文档字符串。
+- 使用 Google 风格的文档字符串。
+- 在 Python 签名和文档字符串中都包含类型信息。
+- 在 `Args` 中使用 `name (type): description` 这种格式。
+- 在 `Returns` 中使用 `Type: description` 这种格式。
+- 在 `Raises` 中说明具体异常类型以及触发条件。
+- 对于 `dataclass` 或 `BaseModel` 等数据结构，在 `Attributes` 下使用 `name (type): description` 的格式记录字段。
 
-### Docstrings
+### 一致性
 
-- Add docstrings for all data structures, functions, and classes that are added or modified.
-- Use Google-style docstrings.
-- Include type information inside docstrings as well as in Python signatures.
-- In `Args`, use the form `name (type): description`.
-- In `Returns`, use the form `Type: description`.
-- In `Raises`, describe the concrete exception type and the condition.
-- For data structures such as `dataclass` or `BaseModel`, document fields under `Attributes` using the form `name (type): description`.
+- 保持文档字符串与类型注解彼此一致。
+- 如果代码格式化工具或 pre-commit 钩子重写了文档字符串布局，应保留格式化结果，不要手动对抗。
+- 优先进行渐进式、局部性的改进，避免做与当前任务无关的大规模注解调整。
 
-### Consistency
+### 轻量规则
 
-- Keep docstrings and type annotations consistent with each other.
-- If code formatting or pre-commit hooks rewrite docstring layout, keep the formatter's result and do not fight it manually.
-- Prefer incremental, local improvements over unrelated large-scale annotation changes.
+- 对于测试代码中的简短辅助函数、一次性迁移脚本或仅在局部使用且语义非常直白的私有短函数，可以酌情放宽文档字符串要求，但类型注解仍应尽量补齐。
+- 对私有且实现非常直接的短函数，如函数名、签名和实现已经足够清晰，可不强制添加冗余文档字符串；但只要存在非显而易见的输入约束、副作用、异常行为或返回语义，就应补充文档字符串说明。
