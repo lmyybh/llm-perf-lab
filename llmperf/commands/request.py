@@ -250,6 +250,9 @@ def run_request_command(args: RequestCommandArgs) -> LLMResponse:
         )
     )
 
-    print()
+    if not args.stream:
+        print(response.output.content or "")
+    else:
+        print()
 
     return response

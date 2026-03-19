@@ -106,10 +106,17 @@ class OpenAIChatBackend(LLMBackend):
         """
         response_json = await response.json()
 
-        message = response_json.get("choices", [{}])[0].get("message")
+        choice = response_json.get("choices", [{}])[0]
+        usage = response_json.get("usage", {})
 
-        if message:
-            result.output = ChatCompletionOutput(message=message)
+        # TODO: 做显式校验
+        result.output = result.output.model_copy(update=choice.get("message", {}))
+
+        for key, value in usage.items():
+            if key in LLMResponse.model_fields:
+                setattr(result, key, value)
+
+        result.finish_reason = choice.get("finish_reason")
 
     async def _parse_stream_response(
         self,
@@ -139,14 +146,32 @@ class OpenAIChatBackend(LLMBackend):
             chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
             if chunk != "[DONE]":
                 data = json.loads(chunk)
+                choice = data.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
 
-                content = (
-                    data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                )
+                role = delta.get("role")
+                if role is not None and result.output.role is None:
+                    result.output.role = role
 
-                if content:
+                # TODO: 处理 tool_calls
+                reasoning_content = delta.get("reasoning_content")
+                content = delta.get("content")
+
+                text = reasoning_content or content or ""
+                if text:
                     if on_chunk is not None:
-                        on_chunk(content)
+                        on_chunk(text)
+
+                    result.completion_tokens += 1
+
+                    if reasoning_content:
+                        if result.output.reasoning_content is None:
+                            result.output.reasoning_content = ""
+                        result.output.reasoning_content += text
+                    else:
+                        if result.output.content is None:
+                            result.output.content = ""
+                        result.output.content += text
 
                     now = time.perf_counter()
                     if result.ttft == 0.0:
@@ -154,6 +179,10 @@ class OpenAIChatBackend(LLMBackend):
                     else:
                         result.itls.append(now - last_chunk_time)
                     last_chunk_time = now
+                else:
+                    finish_reason = choice.get("finish_reason")
+                    if finish_reason:
+                        result.finish_reason = finish_reason
 
     async def send(
         self,
@@ -174,7 +203,7 @@ class OpenAIChatBackend(LLMBackend):
         """
         self._validate_request(request)
 
-        result = LLMResponse()
+        result = LLMResponse(model=request.model, stream=request.stream)
 
         headers = {"Content-Type": "application/json"}
         payload = self._build_payload(request)
@@ -198,5 +227,10 @@ class OpenAIChatBackend(LLMBackend):
         finally:
             result.finish_time = time.perf_counter()
             result.latency = result.finish_time - result.start_time
+
+            if result.stream and result.completion_tokens > 1:
+                result.tpot = (result.latency - result.ttft) / (
+                    result.completion_tokens - 1
+                )
 
         return result

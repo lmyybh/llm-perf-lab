@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 from typing_extensions import Annotated
 
-from llmperf.commands.bench import bench_requests
+# from llmperf.commands.bench import bench_requests
 from llmperf.commands.request import RequestCommandArgs, run_request_command
 
 app = typer.Typer(add_completion=False)
@@ -25,6 +25,8 @@ def bench() -> None:
     Returns:
         None: This command does not return a value.
     """
+
+    """
     asyncio.run(
         bench_requests(
             url="http://172.18.16.59:8000/v1/chat/completions",
@@ -36,6 +38,8 @@ def bench() -> None:
             max_concurrency=None,
         )
     )
+    """
+    pass
 
 
 @app.command("request")

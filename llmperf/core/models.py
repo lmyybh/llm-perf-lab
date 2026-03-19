@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Literal, Union
+from typing import List, Dict, Optional, Literal, Union, Any
 
 
 class ChatCompletionMessage(BaseModel):
@@ -70,6 +70,35 @@ class ToolChoice(BaseModel):
     type: Literal["function"] = Field(default="function", examples=["function"])
 
 
+class FunctionResponse(BaseModel):
+    """Function call payload returned by the assistant.
+
+    Attributes:
+        name (Optional[str]): Function name emitted by the model.
+        arguments (Optional[str | Dict[str, Any]]): Serialized or decoded
+            function arguments.
+    """
+
+    name: Optional[str] = None
+    arguments: Optional[str | Dict[str, Any]] = None
+
+
+class ToolCall(BaseModel):
+    """A single tool call emitted in a chat completion response.
+
+    Attributes:
+        id (Optional[str]): Tool call identifier.
+        index (Optional[int]): Stream chunk index for partial tool calls.
+        type (Literal["function"]): Tool call type.
+        function (FunctionResponse): Function payload for this tool call.
+    """
+
+    id: Optional[str] = None
+    index: Optional[int] = None
+    type: Literal["function"] = "function"
+    function: FunctionResponse
+
+
 class ChatCompletionInput(BaseModel):
     """Input payload for a chat completion request.
 
@@ -108,12 +137,18 @@ class ChatCompletionOutput(BaseModel):
     """Output payload for a chat completion response.
 
     Attributes:
-        message (ChatCompletionMessage): Final assistant message.
-        rid (Optional[str]): Optional request identifier.
+        role (Optional[Literal["system", "user", "assistant", "tool"]]):
+            Role of the returned message.
+        content (Optional[str]): Final assistant text content.
+        reasoning_content (Optional[str]): Optional reasoning text content.
+        tool_calls (Optional[List[ToolCall]]): Optional tool calls emitted by
+            the assistant.
     """
 
-    message: ChatCompletionMessage
-    rid: Optional[str] = None
+    role: Optional[Literal["system", "user", "assistant", "tool"]] = None
+    content: Optional[str] = None
+    reasoning_content: Optional[str] = None
+    tool_calls: Optional[List[ToolCall]] = Field(default=None, examples=[None])
 
 
 class LLMRequest(BaseModel):
@@ -145,8 +180,10 @@ class LLMResponse(BaseModel):
         finish_reason (Optional[str]): Optional completion finish reason.
         model (Optional[str]): Model name returned by the backend.
         stream (bool): Whether the response was streamed.
-        output (Optional[ChatCompletionOutput]): Optional completion output.
+        output (ChatCompletionOutput): Aggregated completion output.
         extra (Dict[str, object]): Backend-specific extra fields.
+        prompt_tokens (int): Prompt token count reported by the backend.
+        completion_tokens (int): Completion token count or streamed chunk count.
         start_time (float): Request start time.
         finish_time (float): Request finish time.
         latency (float): End-to-end latency in seconds.
@@ -162,8 +199,11 @@ class LLMResponse(BaseModel):
     model: Optional[str] = None
     stream: bool = True
 
-    output: Optional[ChatCompletionOutput] = None
+    output: ChatCompletionOutput = Field(default_factory=ChatCompletionOutput)
     extra: Dict[str, object] = Field(default_factory=dict)
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
     start_time: float = 0.0
     finish_time: float = 0.0
