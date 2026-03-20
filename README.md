@@ -1,6 +1,10 @@
 # llmperf
 
-`llmperf` 是一个面向 OpenAI 兼容接口的轻量命令行工具，用于快速发起聊天请求、观察流式输出，并为后续性能测试或接口联调提供基础能力。
+`llmperf` 是一个面向 OpenAI 兼容接口的轻量命令行工具，支持：
+
+- 发送单次聊天请求并查看流式或非流式输出
+- 基于 JSONL 数据集批量压测聊天接口
+- 汇总延迟、TTFT、TPOT 等关键基准指标
 
 ## 安装
 
@@ -10,113 +14,157 @@
 pip install -e .
 ```
 
-安装完成后可使用以下命令：
+安装完成后可使用以下命令查看入口帮助：
 
 ```bash
 llmperf --help
+```
+
+## 命令概览
+
+```bash
+llmperf request --help
+llmperf bench --help
 ```
 
 ## `request` 命令
 
 `request` 用于向 OpenAI 兼容的 `/v1/chat/completions` 接口发送一次请求。
 
+### 输入方式
 
-### 查看帮助
+以下三种输入方式必须且只能选择一种：
 
-```bash
-llmperf request --help
-```
+1. `--messages`：直接传入 JSON 数组字符串
+2. `--file`：从文件读取 JSON 消息数组
+3. `--user`：直接提供用户输入，可搭配 `--system`
 
-### 请求方式（三选一）：
-
-1. `--messages` 直接传 JSON 字符串
-2. `--file` 从文件读取 JSON 数据
-3. 用 `--user` 搭配可选的 `--system` 快速构造消息
-
-
-### 用法
+### 示例
 
 ```bash
-# 三种请求模式
-llmperf request --messages '[{"role":"user","content":"hello"}]'
-llmperf request --file messages.json
-llmperf request --user "请介绍一下这个项目"
+# 方式 1：直接传消息 JSON
+llmperf request \
+  --messages '[{"role":"user","content":"hello"}]'
 
-# 详细示例
+# 方式 2：从文件读取消息
+llmperf request \
+  --file messages.json
+
+# 方式 3：使用 user/system 快速构造消息
 llmperf request \
   --user "请介绍一下这个项目" \
-  --system "你是一个简洁的技术助手" \
+  --system "你是一个简洁的技术助手"
+```
+
+```bash
+# 带采样参数的完整示例
+llmperf request \
   --url "http://localhost:8000/v1/chat/completions" \
+  --user "请介绍一下这个项目" \
+  --system "你是一个简洁的技术助手" \
   --model "qwen" \
   --temperature 0.6 \
-  --max-tokens 512 \
+  --presence-penalty 0.0 \
+  --frequency-penalty 0.0 \
+  --max-completion-tokens 512 \
   --enable-thinking \
   --stream
 ```
 
-## 重构 TODO
+### 常用参数
 
-### 目标
+- `--url`：目标 OpenAI 兼容接口地址
+- `--model`：请求中携带的模型名
+- `--rid`：可选请求标识
+- `--temperature`：采样温度
+- `--presence-penalty`：presence penalty
+- `--frequency-penalty`：frequency penalty
+- `--repetition-penalty`：repetition penalty
+- `--max-completion-tokens`：最大生成 token 数
+- `--ignore-eos`：忽略 EOS
+- `--seed`：随机种子
+- `--enable-thinking/--disable-thinking`：是否启用 thinking
+- `--stream/--no-stream`：是否使用流式输出
+- `--timeout`：请求超时时间
 
-- 将 `request` 与 `bench` 的公共能力下沉为通用模型与 backend 抽象。
-- 让 `bench` 只负责调度与统计，不直接依赖 OpenAI 协议细节。
-- 为后续接入非 OpenAI 规范接口预留清晰扩展点。
+## `bench` 命令
 
-### 分步重构
+`bench` 用于从数据集文件中读取请求并批量发送到 OpenAI 兼容接口，输出压测摘要。
 
-1. 新建 `llmperf/core/models.py`
-   - 定义 `ChatRequest`、`ChatResult`、`BenchConfig`。
-   - 高层模块后续统一依赖这些中性模型。
+### 支持的数据模式
 
-2. 新建 `llmperf/backends/base.py`
-   - 定义 `ChatBackend` 抽象接口。
-   - 让 `request` / `bench` 依赖抽象而不是具体实现。
+- `openai-jsonl`
+- `zss-jsonl`
+- `random`
 
-3. 新建 `llmperf/backends/openai.py`
-   - 把当前 OpenAI 协议相关逻辑收敛到这里。
-   - 负责请求构造、HTTP 调用、流式与非流式响应解析。
+当前实现主要支持 JSONL 文件输入，使用 `--mode` 指定记录解析方式。
 
-4. 重构 `llmperf/commands/request.py`
-   - 保留现有消息解析逻辑。
-   - 改为先组装 `ChatRequest`，再调用 `ChatBackend`。
+### 示例
 
-5. 重构 `llmperf/commands/bench.py`
-   - 改为接收 `backend`、`BenchConfig`、`list[ChatRequest]`。
-   - 只负责调度、限流、收集结果，不处理协议细节。
+```bash
+llmperf bench \
+  --url "http://localhost:8000/v1/chat/completions" \
+  --file dataset.jsonl \
+  --mode openai-jsonl \
+  --num-requests 100 \
+  --qps 5 \
+  --max-concurrency 20
+```
 
-6. 重构 `llmperf/cli.py`
-   - 保留 Typer 参数声明。
-   - 在命令函数内部组装配置对象并选择 backend。
+```bash
+# 使用覆盖参数批量改写数据集中的请求配置
+llmperf bench \
+  --file dataset.jsonl \
+  --mode zss-jsonl \
+  --model "qwen" \
+  --temperature 0.7 \
+  --max-completion-tokens 256 \
+  --enable-thinking \
+  --ignore-eos
+```
 
-7. 拆分数据集读取逻辑
-   - 新增 `llmperf/datasets/` 目录。
-   - 将现有 `read_zss_file()` 移到独立 reader 中。
+### 输出内容
 
-8. 增加数据集选择入口
-   - 按格式选择 reader。
-   - 避免 bench 主流程依赖某一种样本格式。
+`bench` 会输出一份终端摘要，包含：
 
-9. 新增汇总统计模块
-   - 新建 `llmperf/core/summary.py`。
-   - 输出成功率、失败率、P50/P95/P99 latency、TTFT、吞吐等指标。
+- 总请求数、成功数、失败数
+- 成功率
+- 总耗时
+- 请求吞吐
+- 平均并发度
+- `latency`、`ttft`、`tpot` 的均值及分位数
 
-10. 清理命名与依赖方向
-    - 将高层通用代码中的 OpenAI 命名逐步替换为中性命名。
-    - 保持协议特定逻辑只存在于 `backends/openai.py`。
+## 数据文件说明
 
-11. 最后增加第二种 backend 做验证
-    - 用一个非 OpenAI 接口验证抽象是否合理。
-    - 理想状态下只需新增 backend 文件并注册工厂。
+### `openai-jsonl`
 
-### 建议顺序
+每行一个 JSON 对象，至少包含：
 
-1. `core/models.py`
-2. `backends/base.py`
-3. `backends/openai.py`
-4. `commands/request.py`
-5. `commands/bench.py`
-6. `core/summary.py`
-7. `datasets/`
-8. `cli.py`
-9. 第二个 backend 验证
+```json
+{"conversations": [{"role": "user", "content": "hello"}]}
+```
 
+### `zss-jsonl`
+
+每行一个 JSON 对象，典型字段包括：
+
+```json
+{
+  "messages": [{"role": "user", "content": "hello"}],
+  "model": "qwen",
+  "stream": true,
+  "max_tokens": 128,
+  "temperature": 0.7,
+  "seed": 1,
+  "frequency_penalty": 0.0,
+  "repetition_penalty": 1.0,
+  "presence_penalty": 0.0,
+  "chat_template_kwargs": {"enable_thinking": true}
+}
+```
+
+## 说明
+
+- `request` 适合联调、单次验证和观察模型输出
+- `bench` 适合压测、回归对比和吞吐/延迟分析
+- 如需最新参数说明，以 `llmperf request --help` 和 `llmperf bench --help` 为准
