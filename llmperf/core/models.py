@@ -1,5 +1,11 @@
+"""Shared request, response, and benchmark models for llmperf."""
+
+from typing import Any, Dict, List, Literal, Optional, TypeAlias, Union
+
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Literal, Union, Any
+
+ChatTemplateKwargs: TypeAlias = Dict[str, object]
+ExtraPayload: TypeAlias = Dict[str, object]
 
 
 class ChatCompletionMessage(BaseModel):
@@ -123,14 +129,21 @@ class SamplingParams(BaseModel):
         max_completion_tokens (Optional[int]): Maximum number of completion
             tokens to generate.
         temperature (float): Sampling temperature.
+        presence_penalty (float): Penalty applied to new token presence.
+        frequency_penalty (float): Penalty applied to repeated token frequency.
+        repetition_penalty (Optional[float]): Optional repetition penalty.
         ignore_eos (bool): Whether to ignore the EOS token.
-        sampling_seed (Optional[int]): Optional seed for deterministic sampling.
+        seed (Optional[int]): Optional seed for deterministic sampling.
     """
 
-    max_completion_tokens: Optional[int] = 128
+    max_completion_tokens: Optional[int] = None
     temperature: float = 1.0
+    presence_penalty: float = 0.0
+    frequency_penalty: float = 0.0
+    repetition_penalty: Optional[float] = None
+
     ignore_eos: bool = False
-    sampling_seed: Optional[int] = None
+    seed: Optional[int] = None
 
 
 class ChatCompletionOutput(BaseModel):
@@ -160,15 +173,18 @@ class LLMRequest(BaseModel):
         model (Optional[str]): Optional model name.
         stream (bool): Whether to request a streaming response.
         rid (Optional[str]): Optional request identifier.
-        extra (Dict[str, object]): Backend-specific extra parameters.
+        chat_template_kwargs (Optional[ChatTemplateKwargs]): Optional chat
+            template options forwarded to the backend.
+        extra (ExtraPayload): Backend-specific extra parameters.
     """
 
     input: ChatCompletionInput
-    sampling_params: SamplingParams
+    sampling_params: SamplingParams = Field(default_factory=SamplingParams)
     model: Optional[str] = None
     stream: bool = True
     rid: Optional[str] = None
-    extra: Dict[str, object] = Field(default_factory=dict)
+    chat_template_kwargs: Optional[ChatTemplateKwargs] = None
+    extra: ExtraPayload = Field(default_factory=dict)
 
 
 class LLMResponse(BaseModel):
@@ -181,7 +197,7 @@ class LLMResponse(BaseModel):
         model (Optional[str]): Model name returned by the backend.
         stream (bool): Whether the response was streamed.
         output (ChatCompletionOutput): Aggregated completion output.
-        extra (Dict[str, object]): Backend-specific extra fields.
+        extra (ExtraPayload): Backend-specific extra fields.
         prompt_tokens (int): Prompt token count reported by the backend.
         completion_tokens (int): Completion token count or streamed chunk count.
         start_time (float): Request start time.
@@ -200,7 +216,7 @@ class LLMResponse(BaseModel):
     stream: bool = True
 
     output: ChatCompletionOutput = Field(default_factory=ChatCompletionOutput)
-    extra: Dict[str, object] = Field(default_factory=dict)
+    extra: ExtraPayload = Field(default_factory=dict)
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -211,3 +227,30 @@ class LLMResponse(BaseModel):
     ttft: float = 0.0
     tpot: float = 0.0
     itls: list[float] = Field(default_factory=list)
+
+
+class BenchConfig(BaseModel):
+    """Runtime settings shared by benchmark execution helpers.
+
+    Attributes:
+        num_requests (Optional[int]): Optional maximum number of requests.
+        qps (Optional[float]): Optional request rate limit.
+        max_concurrency (Optional[int]): Optional in-flight request limit.
+        timeout (float): Request timeout in seconds.
+        model (Optional[str]): Optional model name override.
+        temperature (Optional[float]): Optional sampling temperature override.
+        max_completion_tokens (Optional[int]): Optional completion token limit.
+        ignore_eos (Optional[bool]): Optional EOS handling override.
+        enable_thinking (Optional[bool]): Optional thinking flag override.
+    """
+
+    num_requests: Optional[int] = None
+    qps: Optional[float] = None
+    max_concurrency: Optional[int] = None
+    timeout: float = 300.0
+
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    max_completion_tokens: Optional[int] = None
+    ignore_eos: Optional[bool] = None
+    enable_thinking: Optional[bool] = None

@@ -17,6 +17,7 @@ from llmperf.core.models import (
     LLMResponse,
     SamplingParams,
 )
+from llmperf.backends.base import LLMBackend
 from llmperf.backends.openai import OpenAIChatBackend
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
@@ -106,10 +107,16 @@ class RequestCommandArgs(BaseModel):
         model (Optional[str]): Optional model name to send downstream.
         rid (Optional[str]): Optional request identifier.
         temperature (float): Sampling temperature for the request.
+        presence_penalty (float): Penalty applied to tokens based on prior
+            presence.
+        frequency_penalty (float): Penalty applied to tokens based on prior
+            frequency.
+        repetition_penalty (Optional[float]): Optional repetition penalty for
+            generated tokens.
         max_completion_tokens (Optional[int]): Maximum number of completion
             tokens to generate.
         ignore_eos (bool): Whether to ignore EOS during sampling.
-        sampling_seed (Optional[int]): Optional sampling seed.
+        seed (Optional[int]): Optional sampling seed.
         enable_thinking (bool): Whether to enable server-side thinking behavior.
         stream (bool): Whether to request a streaming response.
         timeout (float): Request timeout in seconds.
@@ -126,9 +133,12 @@ class RequestCommandArgs(BaseModel):
     rid: Optional[str] = None
 
     temperature: float = 1.0
+    presence_penalty: float = 0.0
+    frequency_penalty: float = 0.0
+    repetition_penalty: Optional[float] = None
     max_completion_tokens: Optional[int] = 128
     ignore_eos: bool = False
-    sampling_seed: Optional[int] = None
+    seed: Optional[int] = None
 
     enable_thinking: bool = True
     stream: bool = True
@@ -202,8 +212,11 @@ class RequestCommandArgs(BaseModel):
         return SamplingParams(
             max_completion_tokens=self.max_completion_tokens,
             temperature=self.temperature,
+            presence_penalty=self.presence_penalty,
+            frequency_penalty=self.frequency_penalty,
+            repetition_penalty=self.repetition_penalty,
             ignore_eos=self.ignore_eos,
-            sampling_seed=self.sampling_seed,
+            seed=self.seed,
         )
 
     def build_llm_request(self) -> LLMRequest:
@@ -218,18 +231,19 @@ class RequestCommandArgs(BaseModel):
             model=self.model,
             stream=self.stream,
             rid=self.rid,
-            extra={"enable_thinking": self.enable_thinking},
+            chat_template_kwargs={"enable_thinking": self.enable_thinking},
+            extra={},
         )
 
 
-def create_backend(args: RequestCommandArgs) -> OpenAIChatBackend:
+def create_backend(args: RequestCommandArgs) -> LLMBackend:
     """Create the backend instance for the request command.
 
     Args:
         args (RequestCommandArgs): Parsed request command arguments.
 
     Returns:
-        OpenAIChatBackend: Configured backend instance.
+        LLMBackend: Configured backend instance.
     """
     return OpenAIChatBackend(timeout=args.timeout)
 

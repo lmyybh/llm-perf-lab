@@ -102,17 +102,16 @@ class OpenAIChatBackend(LLMBackend):
         Returns:
             dict[str, object]: JSON payload sent to the backend.
         """
-        payload: dict[str, object] = {"stream": request.stream}
+        payload: dict[str, object] = {
+            "stream": request.stream,
+            "rid": request.rid,
+            "chat_template_kwargs": request.chat_template_kwargs,
+        }
         if request.model is not None:
             payload["model"] = request.model
 
         payload.update(request.input.model_dump(exclude_none=True))
         payload.update(request.sampling_params.model_dump())
-
-        if "enable_thinking" in request.extra:
-            payload["chat_template_kwargs"] = {
-                "enable_thinking": request.extra["enable_thinking"]
-            }
 
         return payload
 
