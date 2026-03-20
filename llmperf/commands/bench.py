@@ -11,16 +11,10 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from llmperf.backends.base import LLMBackend
-from llmperf.backends.openai import OpenAIChatBackend
-from llmperf.core.models import BenchConfig, LLMRequest, LLMResponse
-from llmperf.datasets.base import Dataset
-from llmperf.datasets.file import FileDataset
-from llmperf.benchmarks.summary import (
-    MetricStats,
-    BenchSummary,
-    summarize_bench_results,
-)
+from llmperf.backends import LLMBackend, OpenAIChatBackend
+from llmperf.benchmarks import BenchSummary, MetricStats, summarize_bench_results
+from llmperf.core import BenchConfig, LLMRequest, LLMResponse
+from llmperf.datasets import Dataset, FileDataset
 
 console = Console()
 

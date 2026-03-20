@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
 
-from llmperf.core.models import LLMRequest, LLMResponse
+from llmperf.core import LLMRequest, LLMResponse
 
 
 class LLMBackend(ABC):

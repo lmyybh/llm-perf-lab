@@ -8,7 +8,7 @@ from typing import Iterable, List, Mapping, NoReturn, Optional, Protocol, TypeAl
 
 from pydantic import ValidationError
 
-from llmperf.core.models import LLMRequest
+from llmperf.core import LLMRequest
 
 RecordType: TypeAlias = Mapping[str, object]
 RequestPayload: TypeAlias = Mapping[str, object]

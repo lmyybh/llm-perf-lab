@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Iterable, Optional
 
-from llmperf.core.models import LLMRequest
+from llmperf.core import LLMRequest
 from llmperf.datasets.registry import select_reader
 
 

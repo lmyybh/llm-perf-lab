@@ -5,7 +5,7 @@ from typing import Callable, Dict, List, Optional
 import numpy as np
 from pydantic import BaseModel, Field
 
-from llmperf.core.models import LLMResponse
+from llmperf.core import LLMResponse
 
 
 class MetricStats(BaseModel):

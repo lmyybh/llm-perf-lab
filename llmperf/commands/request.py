@@ -10,15 +10,14 @@ from pydantic import BaseModel
 from rich.console import Console
 from rich.table import Table
 
-from llmperf.core.models import (
+from llmperf.backends import LLMBackend, OpenAIChatBackend
+from llmperf.core import (
     ChatCompletionInput,
     ChatCompletionMessage,
     LLMRequest,
     LLMResponse,
     SamplingParams,
 )
-from llmperf.backends.base import LLMBackend
-from llmperf.backends.openai import OpenAIChatBackend
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
 InputMode = Literal["messages", "file", "user"]

@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Iterable, Optional, Protocol
 
-from llmperf.core.models import LLMRequest
+from llmperf.core import LLMRequest
 
 
 class Dataset(Protocol):

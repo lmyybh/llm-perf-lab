@@ -5,7 +5,7 @@ import time
 import aiohttp
 from typing import Callable, Optional
 
-from llmperf.core.models import LLMRequest, LLMResponse
+from llmperf.core import LLMRequest, LLMResponse
 from llmperf.backends.base import LLMBackend
 
 
