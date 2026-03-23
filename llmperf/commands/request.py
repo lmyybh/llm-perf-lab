@@ -3,25 +3,62 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Optional, cast
 
 import typer
 from pydantic import BaseModel
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
-from llmperf.backends import LLMBackend, OpenAIChatBackend
+from llmperf.backends import LLMBackend, OpenAIChatBackend, StreamEvent
 from llmperf.core import (
     ChatCompletionInput,
     ChatCompletionMessage,
     LLMRequest,
     LLMResponse,
     SamplingParams,
+    Tool,
+    ToolChoice,
 )
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
 InputMode = Literal["messages", "file", "user"]
+
+# render
 console = Console()
+REASONING_CONTENT_COLOR = "dim cyan"
+CONTENT_COLOR = "white"
+TOOL_CALL_TITLE_COLOR = "bold yellow"
+TOOL_CALL_KEY_COLOR = "yellow"
+TOOL_CALL_VALUE_COLOR = "white"
+ToolChoiceMode = Literal["auto", "required", "none"]
+
+
+def build_kv_line(
+    key: str,
+    value: Optional[str],
+    key_style: str = TOOL_CALL_KEY_COLOR,
+    value_style: str = TOOL_CALL_VALUE_COLOR,
+    width: int = 10,
+) -> Text:
+    """Build one aligned key-value line for terminal rendering.
+
+    Args:
+        key (str): Label rendered on the left.
+        value (Optional[str]): Text rendered on the right.
+        key_style (str): Rich style used for the key column.
+        value_style (str): Rich style used for the value column.
+        width (int): Display width reserved for the key column.
+
+    Returns:
+        Text: Styled line ready to print with Rich.
+    """
+    rendered = Text()
+    rendered.append(f"{key:<{width}}", style=key_style)
+    rendered.append(": ", style="dim")
+    rendered.append("" if value is None else value, style=value_style)
+    return rendered
 
 
 def handle_messages_mode(messages_json: str) -> ChatCompletionInput:
@@ -103,6 +140,8 @@ class RequestCommandArgs(BaseModel):
         file (Optional[Path]): Optional file containing JSON chat messages.
         user (Optional[str]): Optional user prompt text.
         system (Optional[str]): Optional system prompt text.
+        tools (Optional[str]): Optional JSON-encoded tool declarations.
+        tool_choice (str): Tool selection mode or JSON-encoded tool choice.
         model (Optional[str]): Optional model name to send downstream.
         rid (Optional[str]): Optional request identifier.
         temperature (float): Sampling temperature for the request.
@@ -127,6 +166,9 @@ class RequestCommandArgs(BaseModel):
     file: Optional[Path] = None
     user: Optional[str] = None
     system: Optional[str] = None
+
+    tools: Optional[str] = None
+    tool_choice: str = "auto"
 
     model: Optional[str] = None
     rid: Optional[str] = None
@@ -187,6 +229,10 @@ class RequestCommandArgs(BaseModel):
 
         Returns:
             ChatCompletionInput: Parsed chat completion input.
+
+        Raises:
+            typer.BadParameter: Raised when tool declarations or tool choice are
+                not valid JSON or do not satisfy the response schema.
         """
         mode = self.detect_input_mode()
 
@@ -199,6 +245,28 @@ class RequestCommandArgs(BaseModel):
         else:
             assert self.user is not None
             messages = handle_prompt_mode(self.user, self.system)
+
+        if self.tools is not None:
+            try:
+                tools_payload = json.loads(self.tools)
+            except json.JSONDecodeError as exc:
+                raise typer.BadParameter(
+                    f"invalid JSON for --tools: {exc.msg}"
+                ) from exc
+
+            messages.tools = [Tool.model_validate(tool) for tool in tools_payload]
+
+        if self.tool_choice not in {"auto", "required", "none"}:
+            try:
+                tool_choice = json.loads(self.tool_choice)
+            except json.JSONDecodeError as exc:
+                raise typer.BadParameter(
+                    f"invalid JSON for --tool-choice: {exc.msg}"
+                ) from exc
+
+            messages.tool_choice = ToolChoice.model_validate(tool_choice)
+        else:
+            messages.tool_choice = cast(ToolChoiceMode, self.tool_choice)
 
         return messages
 
@@ -247,31 +315,54 @@ def create_backend(args: RequestCommandArgs) -> LLMBackend:
     return OpenAIChatBackend(timeout=args.timeout)
 
 
-def create_chunk_printer(stream: bool) -> Optional[Callable[[str], None]]:
+def create_chunk_printer(stream: bool) -> Optional[Callable[[StreamEvent], None]]:
     """Create a chunk printer for streaming output.
 
     Args:
         stream (bool): Whether the request uses streaming output.
 
     Returns:
-        Optional[Callable[[str], None]]: A chunk printer for streamed chunks,
-        otherwise ``None``.
+        Optional[Callable[[StreamEvent], None]]: A chunk printer for streamed
+            events, otherwise ``None``.
     """
     if not stream:
         return None
 
-    def _print_chunk(chunk: str) -> None:
+    active_tool_call_id: Optional[str] = None
+
+    def _on_stream_chunk(event: StreamEvent) -> None:
         """Print one streamed response chunk.
 
         Args:
-            chunk (str): Incremental text returned by the backend.
+            event (StreamEvent): Structured streaming event returned by the
+                backend.
 
         Returns:
-            None: This function writes one chunk to the terminal.
+            None: This function writes one streamed event to the terminal.
         """
-        console.print(chunk, end="")
 
-    return _print_chunk
+        if event.type == "content" and event.text is not None:
+            console.out(event.text, end="", style=CONTENT_COLOR)
+        elif event.type == "reasoning_content" and event.text is not None:
+            console.out(event.text, end="", style=REASONING_CONTENT_COLOR)
+        elif event.type == "tool_call":
+            nonlocal active_tool_call_id
+
+            is_new_tool = (
+                event.tool_call_id is not None
+                and event.tool_call_id != active_tool_call_id
+            )
+            if is_new_tool:
+                active_tool_call_id = event.tool_call_id
+                console.print(f"[Tool Call]", style=TOOL_CALL_TITLE_COLOR)
+                console.print(build_kv_line("id", event.tool_call_id))
+                console.print(build_kv_line("name", event.tool_name))
+                console.print(build_kv_line("arguments", ""), end="")
+
+            if event.tool_arguments_delta:
+                console.out(event.tool_arguments_delta, end="")
+
+    return _on_stream_chunk
 
 
 def render_header(stream: bool) -> None:
@@ -324,20 +415,27 @@ def build_response_summary(response: LLMResponse) -> Table:
     return table
 
 
-def get_response_text(response: LLMResponse) -> str:
-    """Build the visible response text for non-stream output.
+def render_no_stream_response(response: LLMResponse) -> None:
+    """Render the visible response body for non-stream output.
 
     Args:
         response (LLMResponse): Aggregated backend response.
 
     Returns:
-        str: Reasoning text followed by visible content when present.
+        None: This function writes the visible response to the terminal.
     """
-    text = response.output.reasoning_content or ""
-    if text:
-        text += "\n"
-    text += response.output.content or ""
-    return text
+    if response.output.reasoning_content is not None:
+        console.print(response.output.reasoning_content, style=REASONING_CONTENT_COLOR)
+
+    if response.output.content is not None:
+        console.print(response.output.content, style=CONTENT_COLOR)
+
+    if response.output.tool_calls is not None:
+        for tool_call in response.output.tool_calls:
+            console.print(f"[Tool Call]", style=TOOL_CALL_TITLE_COLOR)
+            console.print(build_kv_line("id", tool_call.id))
+            console.print(build_kv_line("name", tool_call.function.name))
+            console.print(build_kv_line("arguments", str(tool_call.function.arguments)))
 
 
 def render_response(response: LLMResponse, stream: bool) -> None:
@@ -350,12 +448,8 @@ def render_response(response: LLMResponse, stream: bool) -> None:
     Returns:
         None: This function writes the response to the terminal.
     """
-    if stream:
-        console.print()
-    else:
-        text = get_response_text(response)
-        if text:
-            console.print(text)
+    if not stream:
+        render_no_stream_response(response)
 
     console.print()
 

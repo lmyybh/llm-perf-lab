@@ -144,6 +144,13 @@ def request(
             help="System prompt text. Only valid when used together with --user."
         ),
     ] = None,
+    tools: Annotated[
+        Optional[str],
+        typer.Option(
+            help="tools",
+        ),
+    ] = None,
+    tool_choice: Annotated[str, typer.Option()] = "auto",
     model: Annotated[
         Optional[str],
         typer.Option(help="Model name sent in the request payload."),
@@ -211,6 +218,8 @@ def request(
         file=file,
         user=user,
         system=system,
+        tools=tools,
+        tool_choice=tool_choice,
         model=model,
         rid=rid,
         temperature=temperature,
