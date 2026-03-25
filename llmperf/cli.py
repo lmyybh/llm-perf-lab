@@ -7,9 +7,9 @@ import typer
 from typing_extensions import Annotated
 
 from llmperf.commands.bench import (
-    DatasetMode,
-    BenchCommonArgs,
     BenchCommandArgs,
+    BenchCommonArgs,
+    DatasetMode,
     build_bench_dataset_args,
     run_bench_command,
 )

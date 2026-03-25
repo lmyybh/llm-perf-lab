@@ -1,69 +1,23 @@
-"""Helpers for building and running the request command."""
+"""Argument models and input parsing for the request command."""
 
-import asyncio
 import json
 from pathlib import Path
-from typing import Callable, Literal, Optional, cast
+from typing import Literal, Optional, cast
 
 import typer
 from pydantic import BaseModel
-from rich.console import Console
-from rich.table import Table
-from rich.text import Text
 
-from llmperf.backends import LLMBackend, OpenAIChatBackend, StreamEvent
 from llmperf.common import (
     ChatCompletionInput,
     ChatCompletionMessage,
-    LLMRequest,
-    LLMResponse,
     SamplingParams,
     Tool,
     ToolChoice,
 )
-from llmperf.common import (
-    apply_prompt_token_fallback,
-    estimate_chat_input_prompt_tokens,
-    load_tokenizer,
-)
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
 InputMode = Literal["messages", "file", "user"]
-
-# render
-console = Console()
-REASONING_CONTENT_COLOR = "dim cyan"
-CONTENT_COLOR = "white"
-TOOL_CALL_TITLE_COLOR = "bold yellow"
-TOOL_CALL_KEY_COLOR = "yellow"
-TOOL_CALL_VALUE_COLOR = "white"
 ToolChoiceMode = Literal["auto", "required", "none"]
-
-
-def build_kv_line(
-    key: str,
-    value: Optional[str],
-    key_style: str = TOOL_CALL_KEY_COLOR,
-    value_style: str = TOOL_CALL_VALUE_COLOR,
-    width: int = 10,
-) -> Text:
-    """Build one aligned key-value line for terminal rendering.
-
-    Args:
-        key (str): Label rendered on the left.
-        value (Optional[str]): Text rendered on the right.
-        key_style (str): Rich style used for the key column.
-        value_style (str): Rich style used for the value column.
-        width (int): Display width reserved for the key column.
-
-    Returns:
-        Text: Styled line ready to print with Rich.
-    """
-    rendered = Text()
-    rendered.append(f"{key:<{width}}", style=key_style)
-    rendered.append(": ", style="dim")
-    rendered.append("" if value is None else value, style=value_style)
-    return rendered
 
 
 def handle_messages_mode(messages_json: str) -> ChatCompletionInput:
@@ -99,7 +53,6 @@ def handle_file_mode(file: Path) -> ChatCompletionInput:
         typer.BadParameter: Raised when the file does not exist, is not a
             regular file, or contains invalid JSON.
     """
-
     if not file.exists():
         raise typer.BadParameter(f"message file not found: {file}")
 
@@ -293,212 +246,3 @@ class RequestCommandArgs(BaseModel):
             ignore_eos=self.ignore_eos,
             seed=self.seed,
         )
-
-    def build_llm_request(self) -> LLMRequest:
-        """Build the internal request model for the backend.
-
-        Returns:
-            LLMRequest: Internal request object passed to the backend.
-        """
-        chat_input = self.parse_input()
-        tokenizer = load_tokenizer(
-            tokenizer_path=self.tokenizer_path,
-            model_name=self.model,
-            purpose="request",
-            required=False,
-        )
-        return LLMRequest(
-            input=chat_input,
-            sampling_params=self.parse_sampling_params(),
-            model=self.model,
-            stream=self.stream,
-            rid=self.rid,
-            chat_template_kwargs={"enable_thinking": self.enable_thinking},
-            extra={
-                "prompt_tokens": (
-                    estimate_chat_input_prompt_tokens(
-                        tokenizer=tokenizer,
-                        chat_input=chat_input,
-                    )
-                    if tokenizer is not None
-                    else None
-                )
-            },
-        )
-
-
-def create_backend(args: RequestCommandArgs) -> LLMBackend:
-    """Create the backend instance for the request command.
-
-    Args:
-        args (RequestCommandArgs): Parsed request command arguments.
-
-    Returns:
-        LLMBackend: Configured backend instance.
-    """
-    return OpenAIChatBackend(timeout=args.timeout)
-
-
-def create_chunk_printer(stream: bool) -> Optional[Callable[[StreamEvent], None]]:
-    """Create a chunk printer for streaming output.
-
-    Args:
-        stream (bool): Whether the request uses streaming output.
-
-    Returns:
-        Optional[Callable[[StreamEvent], None]]: A chunk printer for streamed
-            events, otherwise ``None``.
-    """
-    if not stream:
-        return None
-
-    active_tool_call_id: Optional[str] = None
-
-    def _on_stream_chunk(event: StreamEvent) -> None:
-        if event.type == "content" and event.text is not None:
-            console.out(event.text, end="", style=CONTENT_COLOR)
-        elif event.type == "reasoning_content" and event.text is not None:
-            console.out(event.text, end="", style=REASONING_CONTENT_COLOR)
-        elif event.type == "tool_call":
-            nonlocal active_tool_call_id
-
-            is_new_tool = (
-                event.tool_call_id is not None
-                and event.tool_call_id != active_tool_call_id
-            )
-            if is_new_tool:
-                active_tool_call_id = event.tool_call_id
-                console.print(f"[Tool Call]", style=TOOL_CALL_TITLE_COLOR)
-                console.print(build_kv_line("id", event.tool_call_id))
-                console.print(build_kv_line("name", event.tool_name))
-                console.print(build_kv_line("arguments", ""), end="")
-
-            if event.tool_arguments_delta:
-                console.out(event.tool_arguments_delta, end="")
-
-    return _on_stream_chunk
-
-
-def render_header(stream: bool) -> None:
-    """Render the request mode header.
-
-    Args:
-        stream (bool): Whether the request uses streaming output.
-
-    Returns:
-        None: This function writes the header to the terminal.
-    """
-    console.rule("Stream") if stream else console.rule("No-Stream")
-
-
-def build_response_summary(response: LLMResponse) -> Table:
-    """Build a summary table for the aggregated response.
-
-    Args:
-        response (LLMResponse): Aggregated backend response.
-
-    Returns:
-        Table: A terminal table containing key response metadata.
-    """
-    table = Table(show_header=False, box=None, pad_edge=False)
-    table.add_column("Key", style="cyan", no_wrap=True)
-    table.add_column("Value", style="white")
-
-    table.add_row("Status", str(response.status_code))
-
-    if response.model:
-        table.add_row("Model", response.model)
-
-    table.add_row("Latency", f"{response.latency:.2f} s")
-
-    if response.ttft > 0:
-        table.add_row("TTFT", f"{(response.ttft*1000):.2f} ms")
-
-    if response.tpot > 0:
-        table.add_row("TPOT", f"{(response.tpot*1000):.2f} ms")
-
-    if response.prompt_tokens > 0:
-        table.add_row("Prompt Tokens", str(response.prompt_tokens))
-
-    if response.completion_tokens > 0:
-        table.add_row("Completion Tokens", str(response.completion_tokens))
-
-    if response.finish_reason:
-        table.add_row("Finish Reason", response.finish_reason)
-
-    return table
-
-
-def render_no_stream_response(response: LLMResponse) -> None:
-    """Render the visible response body for non-stream output.
-
-    Args:
-        response (LLMResponse): Aggregated backend response.
-
-    Returns:
-        None: This function writes the visible response to the terminal.
-    """
-    if response.output.reasoning_content is not None:
-        console.print(response.output.reasoning_content, style=REASONING_CONTENT_COLOR)
-
-    if response.output.content is not None:
-        console.print(response.output.content, style=CONTENT_COLOR)
-
-    if response.output.tool_calls is not None:
-        for tool_call in response.output.tool_calls:
-            console.print(f"[Tool Call]", style=TOOL_CALL_TITLE_COLOR)
-            console.print(build_kv_line("id", tool_call.id))
-            console.print(build_kv_line("name", tool_call.function.name))
-            console.print(build_kv_line("arguments", str(tool_call.function.arguments)))
-
-
-def render_response(response: LLMResponse, stream: bool) -> None:
-    """Render the response body, errors, and summary sections.
-
-    Args:
-        response (LLMResponse): Aggregated backend response.
-        stream (bool): Whether the response body was streamed.
-
-    Returns:
-        None: This function writes the response to the terminal.
-    """
-    if not stream:
-        render_no_stream_response(response)
-
-    console.print()
-
-    if response.error:
-        console.rule("Error")
-        console.print(response.error, style="bold red")
-
-    console.rule("Response")
-    console.print(build_response_summary(response))
-    console.rule()
-
-
-def run_request_command(args: RequestCommandArgs) -> LLMResponse:
-    """Run the request command and return the aggregated response.
-
-    Args:
-        args (RequestCommandArgs): Parsed request command arguments.
-
-    Returns:
-        LLMResponse: Aggregated backend response.
-    """
-    backend = create_backend(args)
-    request = args.build_llm_request()
-
-    render_header(args.stream)
-
-    response = asyncio.run(
-        backend.send(
-            url=args.url,
-            request=request,
-            on_chunk=create_chunk_printer(args.stream),
-        )
-    )
-    response = apply_prompt_token_fallback(request, response)
-
-    render_response(response, stream=args.stream)
-
-    return response
