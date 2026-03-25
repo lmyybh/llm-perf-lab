@@ -59,7 +59,12 @@ def request(
             help="tools",
         ),
     ] = None,
-    tool_choice: Annotated[str, typer.Option()] = "auto",
+    tool_choice: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Tool choice mode or JSON object. When omitted, file-provided tool_choice is preserved."
+        ),
+    ] = None,
     model: Annotated[
         Optional[str],
         typer.Option(help="Model name sent in the request payload."),

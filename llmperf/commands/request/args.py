@@ -41,17 +41,19 @@ def handle_messages_mode(messages_json: str) -> ChatCompletionInput:
 
 
 def handle_file_mode(file: Path) -> ChatCompletionInput:
-    """Load chat messages from a JSON file.
+    """Load chat completion input from a JSON file.
 
     Args:
-        file (Path): Path to a JSON file containing chat messages.
+        file (Path): Path to a JSON file containing either a chat message list
+            or a chat completion input object.
 
     Returns:
         ChatCompletionInput: Parsed chat completion input.
 
     Raises:
         typer.BadParameter: Raised when the file does not exist, is not a
-            regular file, or contains invalid JSON.
+            regular file, contains invalid JSON, or does not match a supported
+            request payload shape.
     """
     if not file.exists():
         raise typer.BadParameter(f"message file not found: {file}")
@@ -61,11 +63,26 @@ def handle_file_mode(file: Path) -> ChatCompletionInput:
 
     try:
         with file.open() as f:
-            messages = json.load(f)
+            payload = json.load(f)
     except json.JSONDecodeError as exc:
         raise typer.BadParameter(f"invalid JSON for --file: {exc.msg}") from exc
 
-    return ChatCompletionInput(messages=messages)
+    if isinstance(payload, list):
+        return ChatCompletionInput(messages=payload)
+
+    if isinstance(payload, dict):
+        try:
+            return ChatCompletionInput.model_validate(payload)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                "invalid request payload for --file: expected an object with "
+                "'messages' and optional 'tools' / 'tool_choice'"
+            ) from exc
+
+    raise typer.BadParameter(
+        "invalid request payload for --file: expected either a message list "
+        "or an object with 'messages' and optional 'tools' / 'tool_choice'"
+    )
 
 
 def handle_prompt_mode(user: str, system: Optional[str] = None) -> ChatCompletionInput:
@@ -99,7 +116,8 @@ class RequestCommandArgs(BaseModel):
         user (Optional[str]): Optional user prompt text.
         system (Optional[str]): Optional system prompt text.
         tools (Optional[str]): Optional JSON-encoded tool declarations.
-        tool_choice (str): Tool selection mode or JSON-encoded tool choice.
+        tool_choice (Optional[str]): Tool selection mode or JSON-encoded tool
+            choice. When omitted, file-provided tool choice is preserved.
         model (Optional[str]): Optional model name to send downstream.
         tokenizer_path (Optional[Path]): Optional tokenizer path or identifier
             used to estimate prompt tokens locally.
@@ -128,7 +146,7 @@ class RequestCommandArgs(BaseModel):
     system: Optional[str] = None
 
     tools: Optional[str] = None
-    tool_choice: str = "auto"
+    tool_choice: Optional[str] = None
 
     model: Optional[str] = None
     tokenizer_path: Optional[Path] = None
@@ -217,17 +235,20 @@ class RequestCommandArgs(BaseModel):
 
             messages.tools = [Tool.model_validate(tool) for tool in tools_payload]
 
-        if self.tool_choice not in {"auto", "required", "none"}:
-            try:
-                tool_choice = json.loads(self.tool_choice)
-            except json.JSONDecodeError as exc:
-                raise typer.BadParameter(
-                    f"invalid JSON for --tool-choice: {exc.msg}"
-                ) from exc
+        if self.tool_choice is not None:
+            if self.tool_choice not in {"auto", "required", "none"}:
+                try:
+                    tool_choice = json.loads(self.tool_choice)
+                except json.JSONDecodeError as exc:
+                    raise typer.BadParameter(
+                        f"invalid JSON for --tool-choice: {exc.msg}"
+                    ) from exc
 
-            messages.tool_choice = ToolChoice.model_validate(tool_choice)
-        else:
-            messages.tool_choice = cast(ToolChoiceMode, self.tool_choice)
+                messages.tool_choice = ToolChoice.model_validate(tool_choice)
+            else:
+                messages.tool_choice = cast(ToolChoiceMode, self.tool_choice)
+        elif messages.tool_choice is None:
+            messages.tool_choice = "auto"
 
         return messages
 

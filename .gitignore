@@ -2,4 +2,4 @@ __pycache__/
 llmperf.egg-info/
 
 pyrightconfig.json
-test.json
+test*.json

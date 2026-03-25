@@ -6,7 +6,11 @@ from typing import Optional
 import typer
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
-from llmperf.common.models import ChatCompletionInput, LLMRequest, LLMResponse
+from llmperf.common.models import (
+    ChatCompletionInput,
+    LLMRequest,
+    LLMResponse,
+)
 
 
 def load_tokenizer(
@@ -77,12 +81,17 @@ def estimate_chat_input_prompt_tokens(
     messages = [
         message.model_dump(exclude_none=True) for message in chat_input.messages
     ]
+    tools = (
+        [tool.model_dump(exclude_none=True) for tool in chat_input.tools]
+        if chat_input.tools is not None
+        else None
+    )
     try:
         prompt_token_ids = tokenizer.apply_chat_template(
             conversation=messages,
             tokenize=True,
             add_generation_prompt=add_generation_prompt,
-            tools=chat_input.tools,
+            tools=tools,
         )
     except Exception as exc:
         raise typer.BadParameter(f"failed to estimate prompt tokens: {exc}") from exc
