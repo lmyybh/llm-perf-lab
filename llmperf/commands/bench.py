@@ -1,46 +1,56 @@
 """Helpers for building and running the benchmark command."""
 
 import asyncio
+from enum import Enum
 from pathlib import Path
-from typing import Iterable, List, Dict, Optional, Tuple, Literal
 import time
+from typing import Dict, Iterable, List, Literal, Optional, Tuple
+
+import typer
 from pydantic import BaseModel, Field
-from tqdm.asyncio import tqdm
 from rich.console import Console, Group, RenderableType
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
+from tqdm.asyncio import tqdm
+from transformers import PreTrainedTokenizerBase
 
 from llmperf.backends import LLMBackend, OpenAIChatBackend
 from llmperf.benchmarks import BenchSummary, MetricStats, summarize_bench_results
-from llmperf.core import BenchConfig, LLMRequest, LLMResponse
-from llmperf.datasets import Dataset, FileDataset
+from llmperf.common import LLMRequest, LLMResponse
+from llmperf.datasets import Dataset, FileDataset, RandomDataset
+from llmperf.common import apply_prompt_token_fallback, load_tokenizer
 
 console = Console()
 
 
-class BenchCommandArgs(BaseModel):
-    """Arguments required to run the benchmark command.
+class DatasetMode(str, Enum):
+    """Supported dataset modes for the benchmark command."""
+
+    openai = "openai-jsonl"
+    zss = "zss-jsonl"
+    random = "random"
+
+
+class BenchCommonArgs(BaseModel):
+    """Common arguments for benchmark execution.
 
     Attributes:
-        url (str): Target OpenAI-compatible chat completions endpoint.
-        file (Optional[Path]): Optional dataset file path.
-        mode (str): Dataset mode name used by the reader registry.
-        num_requests (Optional[int]): Optional maximum number of requests.
-        qps (Optional[float]): Optional request rate limit.
-        max_concurrency (Optional[int]): Optional in-flight request limit.
+        url (str): Target endpoint URL.
+        num_requests (Optional[int]): Optional request count limit.
+        qps (Optional[float]): Optional request rate cap.
+        max_concurrency (Optional[int]): Optional in-flight request cap.
         timeout (float): Request timeout in seconds.
-        model (Optional[str]): Optional model name override.
-        temperature (Optional[float]): Optional sampling temperature override.
-        max_completion_tokens (Optional[int]): Optional completion token limit.
-        ignore_eos (Optional[bool]): Optional EOS handling override.
-        enable_thinking (Optional[bool]): Optional thinking flag override.
+        model (Optional[str]): Model name sent in benchmark requests.
+        tokenizer_path (Optional[Path]): Optional local or remote tokenizer path
+            used by the random dataset.
+        temperature (Optional[float]): Optional temperature override.
+        max_completion_tokens (Optional[int]): Optional max token override.
+        ignore_eos (Optional[bool]): Optional EOS override.
+        enable_thinking (Optional[bool]): Optional thinking override.
     """
 
     url: str
-
-    file: Optional[Path] = None
-    mode: str
 
     num_requests: Optional[int] = Field(default=None, gt=0)
     qps: Optional[float] = Field(default=None, gt=0)
@@ -48,13 +58,133 @@ class BenchCommandArgs(BaseModel):
     timeout: float = Field(default=300.0, gt=0)
 
     model: Optional[str] = None
+    tokenizer_path: Optional[Path] = None
     temperature: Optional[float] = None
     max_completion_tokens: Optional[int] = None
     ignore_eos: Optional[bool] = None
     enable_thinking: Optional[bool] = None
 
 
-def override_request(request: LLMRequest, config: BenchConfig) -> LLMRequest:
+class FileDatasetArgs(BaseModel):
+    """Arguments for file-backed benchmark datasets.
+
+    Attributes:
+        mode (Literal["openai-jsonl", "zss-jsonl"]): Dataset file mode.
+        file (Path): Dataset file path.
+    """
+
+    mode: Literal["openai-jsonl", "zss-jsonl"]
+    file: Path
+
+
+class RandomDatasetArgs(BaseModel):
+    """Arguments for randomly generated benchmark datasets.
+
+    Attributes:
+        mode (Literal["random"]): Random dataset mode discriminator.
+        seed (int): Random seed for request generation.
+        min_input_tokens (int): Minimum input token count per request.
+        max_input_tokens (int): Maximum input token count per request.
+        min_output_tokens (int): Minimum output token target per request.
+        max_output_tokens (int): Maximum output token target per request.
+    """
+
+    mode: Literal["random"]
+    seed: int = 0
+    min_input_tokens: int = Field(default=64, gt=0)
+    max_input_tokens: int = Field(default=256, gt=0)
+    min_output_tokens: int = Field(default=64, gt=0)
+    max_output_tokens: int = Field(default=256, gt=0)
+
+
+DatasetArgs = FileDatasetArgs | RandomDatasetArgs
+
+
+class BenchCommandArgs(BaseModel):
+    """Arguments required to run the benchmark command.
+
+    Attributes:
+        common (BenchCommonArgs): Benchmark runtime configuration.
+        dataset (DatasetArgs): Dataset-specific configuration.
+    """
+
+    common: BenchCommonArgs
+    dataset: DatasetArgs
+
+
+def build_bench_dataset_args(
+    mode: DatasetMode,
+    file: Optional[Path],
+    seed: int = 0,
+    min_input_tokens: int = 64,
+    max_input_tokens: int = 256,
+    min_output_tokens: int = 64,
+    max_output_tokens: int = 256,
+) -> DatasetArgs:
+    """Build dataset arguments for the selected benchmark mode.
+
+    Args:
+        mode (DatasetMode): Dataset mode selected from the CLI.
+        file (Optional[Path]): Optional dataset file path.
+        seed (int): Random seed for random mode generation.
+        min_input_tokens (int): Minimum input tokens for random mode.
+        max_input_tokens (int): Maximum input tokens for random mode.
+        min_output_tokens (int): Minimum output tokens for random mode.
+        max_output_tokens (int): Maximum output tokens for random mode.
+
+    Returns:
+        DatasetArgs: Dataset configuration matching the selected mode.
+
+    Raises:
+        typer.BadParameter: Raised when required file input is missing.
+    """
+    if mode in {DatasetMode.openai, DatasetMode.zss}:
+        if file is None or not file.is_file():
+            raise typer.BadParameter("")
+
+        return FileDatasetArgs(mode=mode.value, file=file)
+
+    if mode is DatasetMode.random:
+        return RandomDatasetArgs(
+            mode=mode.value,
+            seed=seed,
+            min_input_tokens=min_input_tokens,
+            max_input_tokens=max_input_tokens,
+            min_output_tokens=min_output_tokens,
+            max_output_tokens=max_output_tokens,
+        )
+
+    raise typer.BadParameter("unsupport")
+
+
+def load_random_tokenizer(
+    tokenizer_path: Optional[Path], model_name: Optional[str]
+) -> PreTrainedTokenizerBase:
+    """Load the tokenizer used by the random benchmark dataset.
+
+    Args:
+        tokenizer_path (Optional[Path]): Preferred tokenizer path or identifier.
+        model_name (Optional[str]): Fallback model identifier accepted by
+            ``transformers``.
+
+    Returns:
+        PreTrainedTokenizerBase: Loaded tokenizer instance.
+
+    Raises:
+        typer.BadParameter: Raised when no tokenizer source is available or the
+            tokenizer cannot be loaded.
+    """
+    tokenizer = load_tokenizer(
+        tokenizer_path=tokenizer_path,
+        model_name=model_name,
+        purpose="random dataset",
+        required=True,
+    )
+    assert tokenizer is not None
+    return tokenizer
+
+
+def override_request(request: LLMRequest, config: BenchCommonArgs) -> LLMRequest:
     """Apply benchmark-level overrides to one dataset request.
 
     Args:
@@ -95,7 +225,10 @@ def override_request(request: LLMRequest, config: BenchConfig) -> LLMRequest:
 
 
 async def bench_requests(
-    backend: LLMBackend, url: str, config: BenchConfig, requests: Iterable[LLMRequest]
+    backend: LLMBackend,
+    url: str,
+    config: BenchCommonArgs,
+    requests: Iterable[LLMRequest],
 ) -> List[LLMResponse]:
     """Send benchmark requests and preserve input order in the results.
 
@@ -130,20 +263,35 @@ async def bench_requests(
         else:
             result = await backend.send(url, request)
 
+        result = apply_prompt_token_fallback(request, result)
+
         return index, result
 
-    interval = 1.0 / config.qps if config.qps is not None and config.qps > 0 else 0.0
+    prepared_requests: List[Tuple[int, LLMRequest]] = [
+        (index, override_request(request, config))
+        for index, request in enumerate(requests)
+    ]
+
+    progress = tqdm(total=len(prepared_requests))
     tasks: List[asyncio.Task[Tuple[int, LLMResponse]]] = []
 
-    for index, request in enumerate(requests):
-        request = override_request(request, config)
-        tasks.append(asyncio.create_task(_send_one(index, request)))
+    def _update_progress(_task: asyncio.Task[Tuple[int, LLMResponse]]) -> None:
+        progress.update(1)
+
+    interval = 1.0 / config.qps if config.qps is not None and config.qps > 0 else 0.0
+    for index, request in prepared_requests:
+        task = asyncio.create_task(_send_one(index, request))
+        task.add_done_callback(_update_progress)
+        tasks.append(task)
         if interval > 0:
             await asyncio.sleep(interval)
 
     results: List[Tuple[int, LLMResponse]] = []
-    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-        results.append(await task)
+    try:
+        for task in asyncio.as_completed(tasks):
+            results.append(await task)
+    finally:
+        progress.close()
 
     results.sort(key=lambda x: x[0])
 
@@ -159,29 +307,7 @@ def create_backend(args: BenchCommandArgs) -> LLMBackend:
     Returns:
         LLMBackend: Configured backend instance.
     """
-    return OpenAIChatBackend(timeout=args.timeout)
-
-
-def build_config(args: BenchCommandArgs) -> BenchConfig:
-    """Build runtime benchmark configuration from CLI arguments.
-
-    Args:
-        args (BenchCommandArgs): Parsed benchmark command arguments.
-
-    Returns:
-        BenchConfig: Normalized benchmark configuration.
-    """
-    return BenchConfig(
-        num_requests=args.num_requests,
-        qps=args.qps,
-        max_concurrency=args.max_concurrency,
-        timeout=args.timeout,
-        model=args.model,
-        temperature=args.temperature,
-        max_completion_tokens=args.max_completion_tokens,
-        ignore_eos=args.ignore_eos,
-        enable_thinking=args.enable_thinking,
-    )
+    return OpenAIChatBackend(timeout=args.common.timeout)
 
 
 def build_dataset(args: BenchCommandArgs) -> Dataset:
@@ -196,47 +322,132 @@ def build_dataset(args: BenchCommandArgs) -> Dataset:
     Raises:
         AssertionError: Raised when ``args.file`` is missing.
     """
-    assert args.file is not None
-    return FileDataset(file=args.file, mode=args.mode, num_requests=args.num_requests)
+
+    dataset_args = args.dataset
+
+    if isinstance(dataset_args, FileDatasetArgs):
+        return FileDataset(
+            file=dataset_args.file,
+            mode=dataset_args.mode,
+            num_requests=args.common.num_requests,
+        )
+
+    if isinstance(dataset_args, RandomDatasetArgs):
+        if args.common.num_requests is None:
+            raise typer.BadParameter(
+                "random dataset requires --num-requests to be specified"
+            )
+
+        return RandomDataset(
+            tokenizer=load_random_tokenizer(
+                tokenizer_path=args.common.tokenizer_path,
+                model_name=args.common.model,
+            ),
+            num_requests=args.common.num_requests,
+            min_input_tokens=dataset_args.min_input_tokens,
+            max_input_tokens=dataset_args.max_input_tokens,
+            min_output_tokens=dataset_args.min_output_tokens,
+            max_output_tokens=dataset_args.max_output_tokens,
+            seed=dataset_args.seed,
+        )
+
+    raise typer.BadParameter("unsupported dataset args")
 
 
 def _format_seconds(value: float, unit: Literal["s", "ms"] = "s") -> str:
-    """Format a duration in seconds or milliseconds.
-
-    Args:
-        value (float): Duration value expressed in seconds.
-        unit (Literal["s", "ms"]): Display unit for the formatted string.
-
-    Returns:
-        str: Human-readable duration string.
-    """
     if unit == "s":
         return f"{value:.2f} s"
     else:
         return f"{(value*1000):.2f} ms"
 
 
-def build_overview_table(summary: BenchSummary) -> Table:
-    """Build the high-level benchmark overview table.
+def _format_request_counts(summary: BenchSummary) -> Text:
+    rendered = Text()
+    rendered.append(f"{summary.total_requests} total", style="white")
+    rendered.append(" / ", style="dim")
+    rendered.append(f"{summary.succeeded_requests} ok", style="green")
+    rendered.append(" / ", style="dim")
+    failure_style = "red" if summary.failed_requests > 0 else "dim"
+    rendered.append(f"{summary.failed_requests} fail", style=failure_style)
+    return rendered
+
+
+def build_run_table(summary: BenchSummary) -> Table:
+    """Build the benchmark run overview table.
 
     Args:
         summary (BenchSummary): Aggregated benchmark summary.
 
     Returns:
-        Table: Rich table containing overview metrics.
+        Table: Rich table containing run-level metrics.
     """
     table = Table(show_header=False, box=None, pad_edge=False, expand=False)
     table.add_column("Key", style="cyan", no_wrap=True)
     table.add_column("Value", style="white", no_wrap=True)
 
+    success_style = "green" if summary.failed_requests == 0 else "yellow"
+
+    table.add_row("Requests", _format_request_counts(summary))
     table.add_row(
-        "Requests (total/success/failure)",
-        f"{summary.total_requests}/{summary.succeeded_requests}/{summary.failed_requests}",
+        "Success Rate", Text(f"{summary.success_rate:.2%}", style=success_style)
     )
-    table.add_row("Success Rate", f"{summary.success_rate:.2%}")
     table.add_row("Total Duration", _format_seconds(summary.total_duration))
-    table.add_row("Request Throughput (req/s)", f"{summary.request_throughput:.2f}")
+    qps_value = f"{summary.qps:.2f}" if summary.qps is not None else "inf"
+    table.add_row("QPS", qps_value)
+    max_concurrency_value = (
+        str(summary.max_concurrency) if summary.max_concurrency is not None else "inf"
+    )
+    table.add_row("Max Concurrency", max_concurrency_value)
+    table.add_row("Requests Throughput", f"{summary.request_throughput:.2f} req/s")
     table.add_row("Concurrency", f"{summary.concurrency:.2f}")
+
+    return table
+
+
+def build_token_table(summary: BenchSummary) -> Table:
+    """Build the compact token summary section.
+
+    Args:
+        summary (BenchSummary): Aggregated benchmark summary.
+
+    Returns:
+        Table: Rich table containing token summary rows.
+    """
+    table = Table(show_header=False, box=None, pad_edge=False, expand=False)
+    table.add_column("Metric", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white", no_wrap=True)
+
+    total_width = max(
+        len(str(summary.total_prompt_tokens)), len(str(summary.total_completion_tokens))
+    )
+    mean_width = max(
+        len(str(summary.mean_prompt_tokens)), len(str(summary.mean_completion_tokens))
+    )
+
+    prompt_text = Text()
+    prompt_text.append(f"{summary.total_prompt_tokens:>{total_width}}", style="white")
+    prompt_text.append(" total / ", style="dim")
+    prompt_text.append(f"{summary.mean_prompt_tokens:>{mean_width}}", style="white")
+    prompt_text.append(" mean", style="dim")
+
+    completion_text = Text()
+    completion_text.append(
+        f"{summary.total_completion_tokens:>{total_width}}", style="white"
+    )
+    completion_text.append(" total / ", style="dim")
+    completion_text.append(
+        f"{summary.mean_completion_tokens:>{mean_width}}", style="white"
+    )
+    completion_text.append(" mean", style="dim")
+
+    table.add_row(
+        "Prompt Tokens",
+        prompt_text,
+    )
+    table.add_row(
+        "Completion Tokens",
+        completion_text,
+    )
 
     return table
 
@@ -270,8 +481,14 @@ def build_metrics_table(metrics: Dict[str, Optional[MetricStats]]) -> Optional[T
 
     for metric_name, stats in rows:
         unit = "ms" if metric_name != "latency" else "s"
+        if metric_name == "ttft":
+            label = "TTFT"
+        elif metric_name == "tpot":
+            label = "TPOT"
+        else:
+            label = metric_name.capitalize()
         table.add_row(
-            metric_name,
+            label,
             _format_seconds(stats.mean, unit),
             _format_seconds(stats.p50, unit),
             _format_seconds(stats.p90, unit),
@@ -291,10 +508,11 @@ def render_bench_summary(summary: BenchSummary) -> None:
     Returns:
         None: This function writes the summary to the terminal.
     """
-    overview_table = build_overview_table(summary)
+    run_table = build_run_table(summary)
+    token_table = build_token_table(summary)
     metrics_table = build_metrics_table(summary.metrics)
 
-    renderables: List[RenderableType] = [overview_table]
+    renderables: List[RenderableType] = [run_table, Text(""), token_table]
     if metrics_table is not None:
         renderables.append(Text(""))
         renderables.append(metrics_table)
@@ -319,16 +537,21 @@ def run_bench_command(args: BenchCommandArgs) -> List[LLMResponse]:
         List[LLMResponse]: Aggregated responses returned by the backend.
     """
     backend = create_backend(args)
-    config = build_config(args)
     dataset = build_dataset(args)
 
     start_time = time.perf_counter()
     responses = asyncio.run(
-        bench_requests(backend, args.url, config, dataset.iter_requests())
+        bench_requests(backend, args.common.url, args.common, dataset.iter_requests())
     )
     finish_time = time.perf_counter()
 
-    summary = summarize_bench_results(responses, start_time, finish_time)
+    summary = summarize_bench_results(
+        responses,
+        start_time,
+        finish_time,
+        qps=args.common.qps,
+        max_concurrency=args.common.max_concurrency,
+    )
 
     render_bench_summary(summary)
 

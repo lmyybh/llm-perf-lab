@@ -75,6 +75,7 @@ llmperf request \
 
 - `--url`：目标 OpenAI 兼容接口地址
 - `--model`：请求中携带的模型名
+- `--tokenizer-path`：本地 prompt token 估算优先使用的 tokenizer 路径
 - `--rid`：可选请求标识
 - `--temperature`：采样温度
 - `--presence-penalty`：presence penalty
@@ -86,6 +87,8 @@ llmperf request \
 - `--enable-thinking/--disable-thinking`：是否启用 thinking
 - `--stream/--no-stream`：是否使用流式输出
 - `--timeout`：请求超时时间
+
+当后端未返回 `prompt_tokens` 时，`request` 和 `bench` 会优先使用本地 tokenizer 对输入进行估算。若同时提供 `--tokenizer-path` 和 `--model`，会优先使用 `--tokenizer-path`。
 
 ## `bench` 命令
 
@@ -122,6 +125,40 @@ llmperf bench \
   --enable-thinking \
   --ignore-eos
 ```
+
+```bash
+# 使用随机数据集生成压测请求
+llmperf bench \
+  --mode random \
+  --url "http://localhost:8000/v1/chat/completions" \
+  --num-requests 100 \
+  --tokenizer-path "/path/to/tokenizer" \
+  --model "qwen" \
+  --min-input-tokens 128 \
+  --max-input-tokens 512 \
+  --min-output-tokens 64 \
+  --max-output-tokens 256 \
+  --seed 1
+```
+
+### `random` 模式说明
+
+- `random` 模式不读取 `--file`，而是动态生成请求
+- 必须提供 `--num-requests`
+- tokenizer 加载优先使用 `--tokenizer-path`，未提供时退回到 `--model`
+- 随机模式会为每条请求生成一条随机 `user` 消息
+- 每条请求的 `max_completion_tokens` 会在给定输出区间内随机生成
+- 随机模式生成的数据默认设置 `ignore_eos=True`
+
+### `random` 模式常用参数
+
+- `--tokenizer-path`：优先使用的 tokenizer 路径或名称
+- `--model`：当未提供 `--tokenizer-path` 时，用于加载 tokenizer；同时也会作为请求里的模型名
+- `--seed`：随机数据生成种子
+- `--min-input-tokens`：单条请求的最小输入 token 数
+- `--max-input-tokens`：单条请求的最大输入 token 数
+- `--min-output-tokens`：单条请求的最小输出 token 数
+- `--max-output-tokens`：单条请求的最大输出 token 数
 
 ### 输出内容
 
@@ -167,4 +204,5 @@ llmperf bench \
 
 - `request` 适合联调、单次验证和观察模型输出
 - `bench` 适合压测、回归对比和吞吐/延迟分析
+- 共享的数据模型和 tokenizer 相关辅助逻辑位于 `llmperf/common/`
 - 如需最新参数说明，以 `llmperf request --help` 和 `llmperf bench --help` 为准

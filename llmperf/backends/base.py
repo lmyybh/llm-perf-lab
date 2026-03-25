@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Callable, Literal
 from dataclasses import dataclass
 
-from llmperf.core import LLMRequest, LLMResponse
+from llmperf.common import LLMRequest, LLMResponse
 
 
 @dataclass

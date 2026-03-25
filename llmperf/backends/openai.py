@@ -5,7 +5,7 @@ import time
 import aiohttp
 from typing import Callable, Optional, List, Dict, Literal, TypeAlias, TypedDict
 
-from llmperf.core import LLMRequest, LLMResponse, ChatCompletionOutput, ToolCall
+from llmperf.common import LLMRequest, LLMResponse, ChatCompletionOutput, ToolCall
 from llmperf.backends.base import LLMBackend, StreamEvent
 
 StreamRole: TypeAlias = Literal["system", "user", "assistant", "tool"]
@@ -50,14 +50,6 @@ class StreamChunk(TypedDict, total=False):
 
 
 def _create_client_session(timeout: float = 300.0) -> aiohttp.ClientSession:
-    """Create an aiohttp client session with project defaults.
-
-    Args:
-        timeout (float): Total request timeout in seconds.
-
-    Returns:
-        aiohttp.ClientSession: A configured ``aiohttp.ClientSession`` instance.
-    """
     return aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=timeout),
         read_bufsize=10 * 1024**2,
@@ -403,17 +395,8 @@ class OpenAIChatBackend(LLMBackend):
         def _parse_content(
             content_key: Literal["content", "reasoning_content"],
         ) -> bool:
-            """Apply one text field from a streaming delta.
-
-            Args:
-                content_key (Literal["content", "reasoning_content"]): Text
-                    field to read from the delta.
-
-            Returns:
-                bool: ``True`` when the field contained non-empty text.
-            """
-            content = delta.get(content_key) or ""
-            if not content:
+            content = delta.get(content_key)
+            if content is None:
                 return False
 
             if on_chunk is not None:

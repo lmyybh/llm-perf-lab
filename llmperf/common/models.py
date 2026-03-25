@@ -227,30 +227,3 @@ class LLMResponse(BaseModel):
     ttft: float = 0.0
     tpot: float = 0.0
     itls: list[float] = Field(default_factory=list)
-
-
-class BenchConfig(BaseModel):
-    """Runtime settings shared by benchmark execution helpers.
-
-    Attributes:
-        num_requests (Optional[int]): Optional maximum number of requests.
-        qps (Optional[float]): Optional request rate limit.
-        max_concurrency (Optional[int]): Optional in-flight request limit.
-        timeout (float): Request timeout in seconds.
-        model (Optional[str]): Optional model name override.
-        temperature (Optional[float]): Optional sampling temperature override.
-        max_completion_tokens (Optional[int]): Optional completion token limit.
-        ignore_eos (Optional[bool]): Optional EOS handling override.
-        enable_thinking (Optional[bool]): Optional thinking flag override.
-    """
-
-    num_requests: Optional[int] = None
-    qps: Optional[float] = None
-    max_concurrency: Optional[int] = None
-    timeout: float = 300.0
-
-    model: Optional[str] = None
-    temperature: Optional[float] = None
-    max_completion_tokens: Optional[int] = None
-    ignore_eos: Optional[bool] = None
-    enable_thinking: Optional[bool] = None

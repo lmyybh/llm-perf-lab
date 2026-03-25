@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from llmperf.backends import LLMBackend, OpenAIChatBackend, StreamEvent
-from llmperf.core import (
+from llmperf.common import (
     ChatCompletionInput,
     ChatCompletionMessage,
     LLMRequest,
@@ -20,6 +20,11 @@ from llmperf.core import (
     SamplingParams,
     Tool,
     ToolChoice,
+)
+from llmperf.common import (
+    apply_prompt_token_fallback,
+    estimate_chat_input_prompt_tokens,
+    load_tokenizer,
 )
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
@@ -143,6 +148,8 @@ class RequestCommandArgs(BaseModel):
         tools (Optional[str]): Optional JSON-encoded tool declarations.
         tool_choice (str): Tool selection mode or JSON-encoded tool choice.
         model (Optional[str]): Optional model name to send downstream.
+        tokenizer_path (Optional[Path]): Optional tokenizer path or identifier
+            used to estimate prompt tokens locally.
         rid (Optional[str]): Optional request identifier.
         temperature (float): Sampling temperature for the request.
         presence_penalty (float): Penalty applied to tokens based on prior
@@ -171,6 +178,7 @@ class RequestCommandArgs(BaseModel):
     tool_choice: str = "auto"
 
     model: Optional[str] = None
+    tokenizer_path: Optional[Path] = None
     rid: Optional[str] = None
 
     temperature: float = 1.0
@@ -292,14 +300,30 @@ class RequestCommandArgs(BaseModel):
         Returns:
             LLMRequest: Internal request object passed to the backend.
         """
+        chat_input = self.parse_input()
+        tokenizer = load_tokenizer(
+            tokenizer_path=self.tokenizer_path,
+            model_name=self.model,
+            purpose="request",
+            required=False,
+        )
         return LLMRequest(
-            input=self.parse_input(),
+            input=chat_input,
             sampling_params=self.parse_sampling_params(),
             model=self.model,
             stream=self.stream,
             rid=self.rid,
             chat_template_kwargs={"enable_thinking": self.enable_thinking},
-            extra={},
+            extra={
+                "prompt_tokens": (
+                    estimate_chat_input_prompt_tokens(
+                        tokenizer=tokenizer,
+                        chat_input=chat_input,
+                    )
+                    if tokenizer is not None
+                    else None
+                )
+            },
         )
 
 
@@ -331,16 +355,6 @@ def create_chunk_printer(stream: bool) -> Optional[Callable[[StreamEvent], None]
     active_tool_call_id: Optional[str] = None
 
     def _on_stream_chunk(event: StreamEvent) -> None:
-        """Print one streamed response chunk.
-
-        Args:
-            event (StreamEvent): Structured streaming event returned by the
-                backend.
-
-        Returns:
-            None: This function writes one streamed event to the terminal.
-        """
-
         if event.type == "content" and event.text is not None:
             console.out(event.text, end="", style=CONTENT_COLOR)
         elif event.type == "reasoning_content" and event.text is not None:
@@ -472,16 +486,18 @@ def run_request_command(args: RequestCommandArgs) -> LLMResponse:
         LLMResponse: Aggregated backend response.
     """
     backend = create_backend(args)
+    request = args.build_llm_request()
 
     render_header(args.stream)
 
     response = asyncio.run(
         backend.send(
             url=args.url,
-            request=args.build_llm_request(),
+            request=request,
             on_chunk=create_chunk_printer(args.stream),
         )
     )
+    response = apply_prompt_token_fallback(request, response)
 
     render_response(response, stream=args.stream)
 

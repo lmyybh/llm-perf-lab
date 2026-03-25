@@ -1,112 +1,21 @@
 """CLI entrypoints for llmperf."""
 
-from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 import typer
 from typing_extensions import Annotated
 
-from llmperf.commands.bench import BenchCommandArgs, run_bench_command
+from llmperf.commands.bench import (
+    DatasetMode,
+    BenchCommonArgs,
+    BenchCommandArgs,
+    build_bench_dataset_args,
+    run_bench_command,
+)
 from llmperf.commands.request import RequestCommandArgs, run_request_command
 
 app = typer.Typer(add_completion=False)
-
-
-@app.command()
-def test() -> None:
-    """Run a minimal CLI smoke test."""
-    print("test ok")
-
-
-class DataMode(str, Enum):
-    """Supported dataset modes for the benchmark command."""
-
-    openai = "openai-jsonl"
-    zss = "zss-jsonl"
-    random = "random"
-
-
-@app.command("bench")
-def bench(
-    url: Annotated[
-        str,
-        typer.Option(help="Target OpenAI-compatible chat completions endpoint."),
-    ] = "http://localhost:32110/v1/chat/completions",
-    file: Annotated[
-        Optional[Path],
-        typer.Option(
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            resolve_path=True,
-            help="Path to a dataset file.",
-        ),
-    ] = None,
-    mode: Annotated[
-        DataMode,
-        typer.Option(help="Dataset mode used to parse the input file."),
-    ] = DataMode.openai,
-    num_requests: Annotated[
-        Optional[int],
-        typer.Option(min=1, help="Maximum number of requests to read and send."),
-    ] = None,
-    qps: Annotated[
-        Optional[float],
-        typer.Option(
-            min=0.01, help="Optional request rate limit in queries per second."
-        ),
-    ] = None,
-    max_concurrency: Annotated[
-        Optional[int],
-        typer.Option(min=1, help="Optional maximum number of in-flight requests."),
-    ] = None,
-    timeout: Annotated[
-        float, typer.Option(min=0.01, help="Set timeout for request.")
-    ] = 300.0,
-    model: Annotated[
-        Optional[str],
-        typer.Option(help="Model name sent in the request payload."),
-    ] = None,
-    temperature: Annotated[
-        Optional[float],
-        typer.Option(
-            min=0.0, help="Sampling temperature for the chat completion request."
-        ),
-    ] = None,
-    max_completion_tokens: Annotated[
-        Optional[int],
-        typer.Option(min=1, help="Maximum number of completion tokens to generate."),
-    ] = None,
-    enable_thinking: Annotated[
-        Optional[bool],
-        typer.Option(
-            "--enable-thinking/--disable-thinking", help="Whether to enable thinking."
-        ),
-    ] = None,
-    ignore_eos: Annotated[
-        Optional[bool],
-        typer.Option("--ignore-eos", help="Whether to ignore the EOS token."),
-    ] = None,
-) -> None:
-    """Run benchmark requests against an OpenAI-compatible endpoint."""
-    args = BenchCommandArgs(
-        url=url,
-        file=file,
-        mode=mode.value,
-        num_requests=num_requests,
-        qps=qps,
-        max_concurrency=max_concurrency,
-        timeout=timeout,
-        model=model,
-        temperature=temperature,
-        max_completion_tokens=max_completion_tokens,
-        ignore_eos=ignore_eos,
-        enable_thinking=enable_thinking,
-    )
-
-    run_bench_command(args)
 
 
 @app.command("request")
@@ -154,6 +63,16 @@ def request(
     model: Annotated[
         Optional[str],
         typer.Option(help="Model name sent in the request payload."),
+    ] = None,
+    tokenizer_path: Annotated[
+        Optional[Path],
+        typer.Option(
+            file_okay=True,
+            dir_okay=True,
+            readable=True,
+            resolve_path=True,
+            help="Optional tokenizer path or directory. Preferred over --model for local prompt token estimation.",
+        ),
     ] = None,
     rid: Annotated[
         Optional[str],
@@ -221,6 +140,7 @@ def request(
         tools=tools,
         tool_choice=tool_choice,
         model=model,
+        tokenizer_path=tokenizer_path,
         rid=rid,
         temperature=temperature,
         presence_penalty=presence_penalty,
@@ -236,6 +156,128 @@ def request(
     response = run_request_command(args)
     if response.error:
         raise typer.Exit(code=1)
+
+
+@app.command("bench")
+def bench(
+    url: Annotated[
+        str,
+        typer.Option(help="Target OpenAI-compatible chat completions endpoint."),
+    ] = "http://localhost:32110/v1/chat/completions",
+    num_requests: Annotated[
+        Optional[int],
+        typer.Option(min=1, help="Maximum number of requests to read and send."),
+    ] = None,
+    qps: Annotated[
+        Optional[float],
+        typer.Option(
+            min=0.01, help="Optional request rate limit in queries per second."
+        ),
+    ] = None,
+    max_concurrency: Annotated[
+        Optional[int],
+        typer.Option(min=1, help="Optional maximum number of in-flight requests."),
+    ] = None,
+    timeout: Annotated[
+        float, typer.Option(min=0.01, help="Set timeout for request.")
+    ] = 300.0,
+    model: Annotated[
+        Optional[str],
+        typer.Option(help="Model name sent in the request payload."),
+    ] = None,
+    tokenizer_path: Annotated[
+        Optional[Path],
+        typer.Option(
+            file_okay=True,
+            dir_okay=True,
+            readable=True,
+            resolve_path=True,
+            help="Optional tokenizer path or directory. Random mode prefers this over --model.",
+        ),
+    ] = None,
+    temperature: Annotated[
+        Optional[float],
+        typer.Option(
+            min=0.0, help="Sampling temperature for the chat completion request."
+        ),
+    ] = None,
+    max_completion_tokens: Annotated[
+        Optional[int],
+        typer.Option(min=1, help="Maximum number of completion tokens to generate."),
+    ] = None,
+    enable_thinking: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--enable-thinking/--disable-thinking", help="Whether to enable thinking."
+        ),
+    ] = None,
+    ignore_eos: Annotated[
+        Optional[bool],
+        typer.Option("--ignore-eos", help="Whether to ignore the EOS token."),
+    ] = None,
+    seed: Annotated[
+        int,
+        typer.Option(help="Random seed used by the random dataset mode."),
+    ] = 0,
+    min_input_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="Minimum prompt token count for random mode."),
+    ] = 64,
+    max_input_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum prompt token count for random mode."),
+    ] = 256,
+    min_output_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="Minimum completion token count for random mode."),
+    ] = 64,
+    max_output_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum completion token count for random mode."),
+    ] = 256,
+    file: Annotated[
+        Optional[Path],
+        typer.Option(
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+            help="Path to a dataset file. Required for file-backed dataset modes.",
+        ),
+    ] = None,
+    mode: Annotated[
+        DatasetMode,
+        typer.Option(help="Dataset mode used to parse the input file."),
+    ] = DatasetMode.openai,
+) -> None:
+    """Run benchmark requests against an OpenAI-compatible endpoint."""
+
+    common_args = BenchCommonArgs(
+        url=url,
+        num_requests=num_requests,
+        qps=qps,
+        max_concurrency=max_concurrency,
+        timeout=timeout,
+        model=model,
+        tokenizer_path=tokenizer_path,
+        temperature=temperature,
+        max_completion_tokens=max_completion_tokens,
+        ignore_eos=ignore_eos,
+        enable_thinking=enable_thinking,
+    )
+    dataset_args = build_bench_dataset_args(
+        mode,
+        file=file,
+        seed=seed,
+        min_input_tokens=min_input_tokens,
+        max_input_tokens=max_input_tokens,
+        min_output_tokens=min_output_tokens,
+        max_output_tokens=max_output_tokens,
+    )
+
+    args = BenchCommandArgs(common=common_args, dataset=dataset_args)
+
+    run_bench_command(args)
 
 
 if __name__ == "__main__":
