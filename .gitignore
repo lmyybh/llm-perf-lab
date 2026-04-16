@@ -3,3 +3,4 @@ llmperf.egg-info/
 
 pyrightconfig.json
 test*.json
+.codex

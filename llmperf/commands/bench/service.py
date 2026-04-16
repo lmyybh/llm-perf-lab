@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 from typing import Iterable, Optional
 
-import typer
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
@@ -24,6 +23,7 @@ from llmperf.common import (
     load_tokenizer,
 )
 from llmperf.datasets import Dataset, FileDataset, RandomDataset
+from llmperf.errors import ConfigError
 
 BenchResultWithIndex = tuple[int, LLMResponse]
 
@@ -42,7 +42,7 @@ def load_random_tokenizer(
         PreTrainedTokenizerBase: Loaded tokenizer instance.
 
     Raises:
-        typer.BadParameter: Raised when no tokenizer source is available or the
+        ConfigError: Raised when no tokenizer source is available or the
             tokenizer cannot be loaded.
     """
     tokenizer = load_tokenizer(
@@ -189,7 +189,7 @@ def build_dataset(args: BenchCommandArgs) -> Dataset:
         Dataset: Dataset capable of yielding benchmark requests.
 
     Raises:
-        typer.BadParameter: Raised when random mode omits ``num_requests`` or the
+        ConfigError: Raised when random mode omits ``num_requests`` or the
             dataset arguments are unsupported.
     """
     dataset_args = args.dataset
@@ -203,9 +203,7 @@ def build_dataset(args: BenchCommandArgs) -> Dataset:
 
     if isinstance(dataset_args, RandomDatasetArgs):
         if args.common.num_requests is None:
-            raise typer.BadParameter(
-                "random dataset requires --num-requests to be specified"
-            )
+            raise ConfigError("random dataset requires --num-requests to be specified")
 
         return RandomDataset(
             tokenizer=load_random_tokenizer(
@@ -220,7 +218,7 @@ def build_dataset(args: BenchCommandArgs) -> Dataset:
             seed=dataset_args.seed,
         )
 
-    raise typer.BadParameter("unsupported dataset args")
+    raise ConfigError("unsupported dataset args")
 
 
 def execute_bench(args: BenchCommandArgs) -> tuple[list[LLMResponse], BenchSummary]:

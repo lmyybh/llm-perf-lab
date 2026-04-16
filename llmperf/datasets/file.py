@@ -1,10 +1,10 @@
 """File-backed dataset implementation."""
 
-import typer
 from pathlib import Path
 from typing import Iterable, Optional
 
 from llmperf.common import LLMRequest
+from llmperf.errors import ConfigError, DatasetFormatError
 from llmperf.datasets.base import DatasetReader
 from llmperf.datasets.jsonl import (
     JsonlDatasetReader,
@@ -23,7 +23,7 @@ def select_jsonl_parser(mode: str) -> JsonlRecordParser:
         JsonlRecordParser: Parser matching ``mode``.
 
     Raises:
-        typer.BadParameter: Raised when the mode is unsupported.
+        DatasetFormatError: Raised when the mode is unsupported.
     """
     parsers = build_jsonl_parsers()
 
@@ -31,7 +31,7 @@ def select_jsonl_parser(mode: str) -> JsonlRecordParser:
         if parser.name == mode:
             return parser
 
-    raise typer.BadParameter(f"unsupported dataset mode: {mode}")
+    raise DatasetFormatError(f"unsupported dataset mode: {mode}")
 
 
 def select_reader(file: Path, mode: str) -> DatasetReader:
@@ -45,12 +45,12 @@ def select_reader(file: Path, mode: str) -> DatasetReader:
         DatasetReader: Reader capable of loading the requested file.
 
     Raises:
-        typer.BadParameter: Raised when the file type is unsupported.
+        ConfigError: Raised when the file type is unsupported.
     """
     if file.suffix == ".jsonl":
         return JsonlDatasetReader(parser=select_jsonl_parser(mode=mode))
 
-    raise typer.BadParameter(f"unsupported dataset file: {file}")
+    raise ConfigError(f"unsupported dataset file: {file}")
 
 
 class FileDataset:

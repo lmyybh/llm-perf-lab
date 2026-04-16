@@ -1,7 +1,6 @@
 """JSONL dataset readers and record parsers."""
 
 import json
-import typer
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Iterable, List, Mapping, NoReturn, Optional, Protocol, TypeAlias
@@ -9,6 +8,7 @@ from typing import Iterable, List, Mapping, NoReturn, Optional, Protocol, TypeAl
 from pydantic import ValidationError
 
 from llmperf.common import LLMRequest
+from llmperf.errors import DatasetFormatError
 
 RecordType: TypeAlias = Mapping[str, object]
 RequestPayload: TypeAlias = Mapping[str, object]
@@ -68,7 +68,7 @@ class BaseJsonlParser(ABC):
             LLMRequest: Validated request model.
 
         Raises:
-            typer.BadParameter: Raised when the record is structurally invalid.
+            DatasetFormatError: Raised when the record is structurally invalid.
         """
         try:
             data = self.build_payload(record=record)
@@ -105,9 +105,9 @@ class BaseJsonlParser(ABC):
             exc (Exception): Original exception to chain.
 
         Raises:
-            typer.BadParameter: Always raised with record context.
+            DatasetFormatError: Always raised with record context.
         """
-        raise typer.BadParameter(
+        raise DatasetFormatError(
             f"invalid {self.name} record at line {line_number}: {message}"
         ) from exc
 
@@ -217,7 +217,7 @@ class JsonlDatasetReader:
             Iterable[LLMRequest]: Requests parsed from the JSONL file.
 
         Raises:
-            typer.BadParameter: Raised when any line contains invalid JSON.
+            DatasetFormatError: Raised when any line contains invalid JSON.
         """
         with file.open() as f:
             count = 0
@@ -228,7 +228,7 @@ class JsonlDatasetReader:
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    raise typer.BadParameter(
+                    raise DatasetFormatError(
                         f"invalid JSON at line {line_number}: {exc.msg}"
                     ) from exc
 

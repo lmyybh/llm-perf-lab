@@ -3,9 +3,9 @@
 from pathlib import Path
 from typing import Optional
 
-import typer
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
+from llmperf.errors import ConfigError, ValidationError
 from llmperf.common.models import (
     ChatCompletionInput,
     LLMRequest,
@@ -33,13 +33,13 @@ def load_tokenizer(
             ``None`` when not required and no source is configured.
 
     Raises:
-        typer.BadParameter: Raised when no tokenizer source is available while
+        ConfigError: Raised when no tokenizer source is available while
             required, or when loading fails.
     """
     source = str(tokenizer_path) if tokenizer_path is not None else model_name
     if source is None or source.strip() == "":
         if required:
-            raise typer.BadParameter(
+            raise ConfigError(
                 f"{purpose} requires --tokenizer-path or --model to load a tokenizer"
             )
         return None
@@ -47,12 +47,12 @@ def load_tokenizer(
     try:
         tokenizer = AutoTokenizer.from_pretrained(source)
     except Exception as exc:
-        raise typer.BadParameter(
+        raise ConfigError(
             f"failed to load tokenizer for {purpose} from {source!r}: {exc}"
         ) from exc
 
     if not isinstance(tokenizer, PreTrainedTokenizerBase):
-        raise typer.BadParameter(
+        raise ConfigError(
             f"loaded tokenizer for {purpose} is invalid: {type(tokenizer).__name__}"
         )
 
@@ -76,7 +76,7 @@ def estimate_chat_input_prompt_tokens(
         int: Estimated prompt token count.
 
     Raises:
-        typer.BadParameter: Raised when token estimation fails.
+        ValidationError: Raised when token estimation fails.
     """
     messages = [
         message.model_dump(exclude_none=True) for message in chat_input.messages
@@ -92,9 +92,9 @@ def estimate_chat_input_prompt_tokens(
             tokenize=True,
             add_generation_prompt=add_generation_prompt,
             tools=tools,
-        )
+        )["input_ids"]
     except Exception as exc:
-        raise typer.BadParameter(f"failed to estimate prompt tokens: {exc}") from exc
+        raise ValidationError(f"failed to estimate prompt tokens: {exc}") from exc
 
     return len(prompt_token_ids)
 

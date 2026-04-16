@@ -396,7 +396,7 @@ class OpenAIChatBackend(LLMBackend):
             content_key: Literal["content", "reasoning_content"],
         ) -> bool:
             content = delta.get(content_key)
-            if content is None:
+            if content is None or content == "":
                 return False
 
             if on_chunk is not None:

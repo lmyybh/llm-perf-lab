@@ -14,8 +14,14 @@ from llmperf.commands.bench import (
     run_bench_command,
 )
 from llmperf.commands.request import RequestCommandArgs, run_request_command
+from llmperf.errors import LLMPerfError
 
 app = typer.Typer(add_completion=False)
+
+
+def _raise_cli_error(exc: LLMPerfError) -> None:
+    """Translate project-level errors into Typer-friendly CLI errors."""
+    raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command("request")
@@ -156,7 +162,10 @@ def request(
         stream=stream,
         timeout=timeout,
     )
-    response = run_request_command(args)
+    try:
+        response = run_request_command(args)
+    except LLMPerfError as exc:
+        _raise_cli_error(exc)
     if response.error:
         raise typer.Exit(code=1)
 
@@ -280,7 +289,10 @@ def bench(
 
     args = BenchCommandArgs(common=common_args, dataset=dataset_args)
 
-    run_bench_command(args)
+    try:
+        run_bench_command(args)
+    except LLMPerfError as exc:
+        _raise_cli_error(exc)
 
 
 if __name__ == "__main__":
