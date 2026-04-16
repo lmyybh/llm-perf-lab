@@ -104,11 +104,9 @@ def request(
         ),
     ] = 0.0,
     repetition_penalty: Annotated[
-        Optional[float],
-        typer.Option(
-            min=0.0, max=2.0, help="Optional repetition penalty for generated tokens."
-        ),
-    ] = None,
+        float,
+        typer.Option(min=0.0, max=2.0, help="Repetition penalty for generated tokens."),
+    ] = 1.0,
     max_completion_tokens: Annotated[
         Optional[int],
         typer.Option(min=1, help="Maximum number of completion tokens to generate."),

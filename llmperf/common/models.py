@@ -131,7 +131,7 @@ class SamplingParams(BaseModel):
         temperature (float): Sampling temperature.
         presence_penalty (float): Penalty applied to new token presence.
         frequency_penalty (float): Penalty applied to repeated token frequency.
-        repetition_penalty (Optional[float]): Optional repetition penalty.
+        repetition_penalty (float): Repetition penalty.
         ignore_eos (bool): Whether to ignore the EOS token.
         seed (Optional[int]): Optional seed for deterministic sampling.
     """
@@ -140,7 +140,7 @@ class SamplingParams(BaseModel):
     temperature: float = 1.0
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
-    repetition_penalty: Optional[float] = None
+    repetition_penalty: float = 1.0
 
     ignore_eos: bool = False
     seed: Optional[int] = None
