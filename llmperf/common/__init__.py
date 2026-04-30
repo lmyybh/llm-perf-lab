@@ -4,6 +4,8 @@ from llmperf.common.models import (
     ChatCompletionInput,
     ChatCompletionMessage,
     ChatCompletionOutput,
+    GenerateInput,
+    GenerateOutput,
     LLMRequest,
     LLMResponse,
     SamplingParams,
@@ -13,7 +15,6 @@ from llmperf.common.models import (
 )
 from llmperf.common.tokenization import (
     apply_prompt_token_fallback,
-    estimate_chat_input_prompt_tokens,
     load_tokenizer,
 )
 
@@ -21,6 +22,8 @@ __all__ = [
     "ChatCompletionInput",
     "ChatCompletionMessage",
     "ChatCompletionOutput",
+    "GenerateInput",
+    "GenerateOutput",
     "LLMRequest",
     "LLMResponse",
     "SamplingParams",
@@ -28,6 +31,5 @@ __all__ = [
     "ToolCall",
     "ToolChoice",
     "apply_prompt_token_fallback",
-    "estimate_chat_input_prompt_tokens",
     "load_tokenizer",
 ]

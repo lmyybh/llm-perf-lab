@@ -59,6 +59,7 @@ def request(
             help="System prompt text. Only valid when used together with --user."
         ),
     ] = None,
+    text: Annotated[Optional[str], typer.Option(help="Generate text")] = None,
     tools: Annotated[
         Optional[str],
         typer.Option(
@@ -146,6 +147,7 @@ def request(
         file=file,
         user=user,
         system=system,
+        text=text,
         tools=tools,
         tool_choice=tool_choice,
         model=model,

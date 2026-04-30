@@ -3,6 +3,9 @@
 from typing import Any, Dict, List, Literal, Optional, TypeAlias, Union
 
 from pydantic import BaseModel, Field
+from transformers import PreTrainedTokenizerBase
+
+from llmperf.errors import ValidationError
 
 ChatTemplateKwargs: TypeAlias = Dict[str, object]
 ExtraPayload: TypeAlias = Dict[str, object]
@@ -121,6 +124,25 @@ class ChatCompletionInput(BaseModel):
         default="auto", examples=["none"]
     )
 
+    def estimate_prompt_tokens_length(self, tokenizer: PreTrainedTokenizerBase):
+        messages = [message.model_dump(exclude_none=True) for message in self.messages]
+        tools = (
+            [tool.model_dump(exclude_none=True) for tool in self.tools]
+            if self.tools is not None
+            else None
+        )
+        try:
+            prompt_token_ids = tokenizer.apply_chat_template(
+                conversation=messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                tools=tools,
+            )["input_ids"]
+        except Exception as exc:
+            raise ValidationError(f"failed to estimate prompt tokens: {exc}") from exc
+
+        return len(prompt_token_ids)
+
 
 class SamplingParams(BaseModel):
     """Sampling configuration for text generation.
@@ -164,6 +186,23 @@ class ChatCompletionOutput(BaseModel):
     tool_calls: Optional[List[ToolCall]] = Field(default=None, examples=[None])
 
 
+class GenerateInput(BaseModel):
+    text: Optional[str] = None
+    input_ids: Optional[List[int]] = None
+
+    def estimate_prompt_tokens_length(self, tokenizer: PreTrainedTokenizerBase):
+        if self.text is not None:
+            prompt_token_ids = tokenizer.encode(self.text)
+            return len(prompt_token_ids)
+
+        if self.input_ids is not None:
+            return len(self.input_ids)
+
+
+class GenerateOutput(BaseModel):
+    text: Optional[str] = None
+
+
 class LLMRequest(BaseModel):
     """Internal request model used by llmperf backends.
 
@@ -178,7 +217,7 @@ class LLMRequest(BaseModel):
         extra (ExtraPayload): Backend-specific extra parameters.
     """
 
-    input: ChatCompletionInput
+    input: Union[ChatCompletionInput, GenerateInput]
     sampling_params: SamplingParams = Field(default_factory=SamplingParams)
     model: Optional[str] = None
     stream: bool = True
@@ -215,7 +254,9 @@ class LLMResponse(BaseModel):
     model: Optional[str] = None
     stream: bool = True
 
-    output: ChatCompletionOutput = Field(default_factory=ChatCompletionOutput)
+    output: Union[ChatCompletionOutput, GenerateOutput] = Field(
+        default_factory=ChatCompletionOutput
+    )
     extra: ExtraPayload = Field(default_factory=dict)
 
     prompt_tokens: int = 0

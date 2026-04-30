@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 
 from llmperf.backends import StreamEvent
-from llmperf.common import LLMResponse
+from llmperf.common import LLMResponse, ChatCompletionOutput, GenerateOutput
 
 console = Console()
 REASONING_CONTENT_COLOR = "dim cyan"
@@ -61,7 +61,7 @@ def create_chunk_printer(stream: bool) -> Optional[Callable[[StreamEvent], None]
     def _on_stream_chunk(event: StreamEvent) -> None:
         nonlocal active_tool_call_id
 
-        if event.type == "content" and event.text is not None:
+        if event.type in {"content", "text"} and event.text is not None:
             console.out(event.text, end="", style=CONTENT_COLOR)
         elif event.type == "reasoning_content" and event.text is not None:
             console.out(event.text, end="", style=REASONING_CONTENT_COLOR)
@@ -142,18 +142,26 @@ def render_no_stream_response(response: LLMResponse) -> None:
     Returns:
         None: This function writes the visible response to the terminal.
     """
-    if response.output.reasoning_content is not None:
-        console.print(response.output.reasoning_content, style=REASONING_CONTENT_COLOR)
+    if isinstance(response.output, ChatCompletionOutput):
+        if response.output.reasoning_content is not None:
+            console.print(
+                response.output.reasoning_content, style=REASONING_CONTENT_COLOR
+            )
 
-    if response.output.content is not None:
-        console.print(response.output.content, style=CONTENT_COLOR)
+        if response.output.content is not None:
+            console.print(response.output.content, style=CONTENT_COLOR)
 
-    if response.output.tool_calls is not None:
-        for tool_call in response.output.tool_calls:
-            console.print(f"[Tool Call]", style=TOOL_CALL_TITLE_COLOR)
-            console.print(build_kv_line("id", tool_call.id))
-            console.print(build_kv_line("name", tool_call.function.name))
-            console.print(build_kv_line("arguments", str(tool_call.function.arguments)))
+        if response.output.tool_calls is not None:
+            for tool_call in response.output.tool_calls:
+                console.print(f"[Tool Call]", style=TOOL_CALL_TITLE_COLOR)
+                console.print(build_kv_line("id", tool_call.id))
+                console.print(build_kv_line("name", tool_call.function.name))
+                console.print(
+                    build_kv_line("arguments", str(tool_call.function.arguments))
+                )
+    elif isinstance(response.output, GenerateOutput):
+        if response.output.text is not None:
+            console.print(response.output.text, style=CONTENT_COLOR)
 
 
 def render_response(response: LLMResponse, stream: bool) -> None:

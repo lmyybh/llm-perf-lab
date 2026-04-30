@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Literal, Optional, cast
+from typing import Literal, Optional, Union, cast
 
 import typer
 from pydantic import BaseModel
@@ -10,13 +10,15 @@ from pydantic import BaseModel
 from llmperf.common import (
     ChatCompletionInput,
     ChatCompletionMessage,
+    GenerateInput,
     SamplingParams,
     Tool,
     ToolChoice,
 )
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
-InputMode = Literal["messages", "file", "user"]
+UrlMode = Literal["openai", "generate"]
+OpenaiInputMode = Literal["messages", "file", "user"]
 ToolChoiceMode = Literal["auto", "required", "none"]
 
 
@@ -140,10 +142,14 @@ class RequestCommandArgs(BaseModel):
 
     url: str
 
+    # chat mode
     messages_json: Optional[str] = None
     file: Optional[Path] = None
     user: Optional[str] = None
     system: Optional[str] = None
+
+    # generate mode
+    text: Optional[str] = None
 
     tools: Optional[str] = None
     tool_choice: Optional[str] = None
@@ -155,7 +161,7 @@ class RequestCommandArgs(BaseModel):
     temperature: float = 1.0
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
-    repetition_penalty: Optional[float] = None
+    repetition_penalty: float = 1.0
     max_completion_tokens: Optional[int] = 128
     ignore_eos: bool = False
     seed: Optional[int] = None
@@ -165,28 +171,37 @@ class RequestCommandArgs(BaseModel):
 
     timeout: float = 300
 
-    def detect_input_mode(self) -> InputMode:
+    def detect_url_mode(self) -> UrlMode:
+        if self.url.endswith("/generate"):
+            return "generate"
+
+        return "openai"
+
+    def detect_openai_input_mode(self) -> OpenaiInputMode:
         """Determine which mutually exclusive input mode is active.
 
         Returns:
-            InputMode: The selected input mode.
+            OpenaiInputMode: The selected input mode.
 
         Raises:
             typer.BadParameter: Raised when zero or multiple input modes are
                 selected, or when ``system`` is used without ``user``.
         """
+        if self.text is not None:
+            raise typer.BadParameter("--text can only be used with a /generate URL")
+
         has_messages = (
             self.messages_json is not None and self.messages_json.strip() != ""
         )
         has_file = self.file is not None
         has_user = self.user is not None and self.user.strip() != ""
 
-        selected: list[tuple[InputMode, bool]] = [
+        selected: list[tuple[OpenaiInputMode, bool]] = [
             ("messages", has_messages),
             ("file", has_file),
             ("user", has_user),
         ]
-        enabled_modes: list[InputMode] = [name for name, ok in selected if ok]
+        enabled_modes: list[OpenaiInputMode] = [name for name, ok in selected if ok]
 
         if len(enabled_modes) == 0:
             raise typer.BadParameter(
@@ -203,7 +218,38 @@ class RequestCommandArgs(BaseModel):
 
         return enabled_modes[0]
 
-    def parse_input(self) -> ChatCompletionInput:
+    def parse_generate_input(self) -> GenerateInput:
+        """Parse command arguments into a generate input.
+
+        Returns:
+            GenerateInput: Parsed text generation input.
+
+        Raises:
+            typer.BadParameter: Raised when chat-only input options are used or
+                when ``--text`` is omitted.
+        """
+        forbidden_options = []
+        if self.messages_json is not None:
+            forbidden_options.append("--messages")
+        if self.file is not None:
+            forbidden_options.append("--file")
+        if self.user is not None:
+            forbidden_options.append("--user")
+        if self.system is not None:
+            forbidden_options.append("--system")
+
+        if forbidden_options:
+            options = ", ".join(forbidden_options)
+            raise typer.BadParameter(
+                f"/generate only accepts --text; unsupported options: {options}"
+            )
+
+        if self.text is None or self.text.strip() == "":
+            raise typer.BadParameter("/generate requires non-empty --text")
+
+        return GenerateInput(text=self.text)
+
+    def parse_openai_input(self) -> ChatCompletionInput:
         """Parse command arguments into chat completion input.
 
         Returns:
@@ -213,7 +259,7 @@ class RequestCommandArgs(BaseModel):
             typer.BadParameter: Raised when tool declarations or tool choice are
                 not valid JSON or do not satisfy the response schema.
         """
-        mode = self.detect_input_mode()
+        mode = self.detect_openai_input_mode()
 
         if mode == "messages":
             assert self.messages_json is not None
@@ -251,6 +297,12 @@ class RequestCommandArgs(BaseModel):
             messages.tool_choice = "auto"
 
         return messages
+
+    def parse_input(self) -> Union[ChatCompletionInput, GenerateInput]:
+        if self.detect_url_mode() == "generate":
+            return self.parse_generate_input()
+        else:
+            return self.parse_openai_input()
 
     def parse_sampling_params(self) -> SamplingParams:
         """Build sampling parameters for the outgoing request.

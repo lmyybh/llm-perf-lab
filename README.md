@@ -29,15 +29,17 @@ llmperf bench --help
 
 ## `request` 命令
 
-`request` 用于向 OpenAI 兼容的 `/v1/chat/completions` 接口发送一次请求。
+`request` 用于向 OpenAI 兼容的 `/v1/chat/completions` 接口或 `/generate` 接口发送一次请求。
 
 ### 输入方式
 
-以下三种输入方式必须且只能选择一种：
+当 URL 不以 `/generate` 结尾时，使用聊天请求模式。以下三种输入方式必须且只能选择一种：
 
 1. `--messages`：直接传入 JSON 数组字符串
 2. `--file`：从文件读取 JSON 消息数组
 3. `--user`：直接提供用户输入，可搭配 `--system`
+
+当 URL 以 `/generate` 结尾时，使用文本生成模式，必须提供非空 `--text`，且不能同时使用 `--messages`、`--file`、`--user` 或 `--system`。
 
 ### 示例
 
@@ -54,6 +56,13 @@ llmperf request \
 llmperf request \
   --user "请介绍一下这个项目" \
   --system "你是一个简洁的技术助手"
+```
+
+```bash
+# /generate 文本生成模式
+llmperf request \
+  --url "http://localhost:8000/generate" \
+  --text "请介绍一下这个项目"
 ```
 
 ```bash
@@ -74,6 +83,7 @@ llmperf request \
 ### 常用参数
 
 - `--url`：目标 OpenAI 兼容接口地址
+- `--text`：`/generate` 文本生成模式的输入文本
 - `--model`：请求中携带的模型名
 - `--tokenizer-path`：本地 prompt token 估算优先使用的 tokenizer 路径
 - `--rid`：可选请求标识

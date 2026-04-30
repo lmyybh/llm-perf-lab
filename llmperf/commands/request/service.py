@@ -3,13 +3,12 @@
 import asyncio
 from typing import Callable, Optional
 
-from llmperf.backends import LLMBackend, OpenAIChatBackend, StreamEvent
+from llmperf.backends import LLMBackend, OpenAIChatBackend, GenerateBackend, StreamEvent
 from llmperf.commands.request.args import RequestCommandArgs
 from llmperf.common import (
     LLMRequest,
     LLMResponse,
     apply_prompt_token_fallback,
-    estimate_chat_input_prompt_tokens,
     load_tokenizer,
 )
 
@@ -23,6 +22,10 @@ def create_backend(args: RequestCommandArgs) -> LLMBackend:
     Returns:
         LLMBackend: Configured backend instance.
     """
+
+    if args.url.endswith("/generate"):
+        return GenerateBackend(timeout=args.timeout)
+
     return OpenAIChatBackend(timeout=args.timeout)
 
 
@@ -35,7 +38,7 @@ def build_llm_request(args: RequestCommandArgs) -> LLMRequest:
     Returns:
         LLMRequest: Internal request object passed to the backend.
     """
-    chat_input = args.parse_input()
+    input = args.parse_input()
     tokenizer = load_tokenizer(
         tokenizer_path=args.tokenizer_path,
         model_name=args.model,
@@ -43,7 +46,7 @@ def build_llm_request(args: RequestCommandArgs) -> LLMRequest:
         required=False,
     )
     return LLMRequest(
-        input=chat_input,
+        input=input,
         sampling_params=args.parse_sampling_params(),
         model=args.model,
         stream=args.stream,
@@ -51,10 +54,7 @@ def build_llm_request(args: RequestCommandArgs) -> LLMRequest:
         chat_template_kwargs={"enable_thinking": args.enable_thinking},
         extra={
             "prompt_tokens": (
-                estimate_chat_input_prompt_tokens(
-                    tokenizer=tokenizer,
-                    chat_input=chat_input,
-                )
+                input.estimate_prompt_tokens_length(tokenizer)
                 if tokenizer is not None
                 else None
             )

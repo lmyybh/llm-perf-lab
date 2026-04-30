@@ -12,7 +12,6 @@ from llmperf.common import (
     LLMRequest,
     SamplingParams,
 )
-from llmperf.common import estimate_chat_input_prompt_tokens
 
 
 class RandomDataset:
@@ -87,12 +86,9 @@ class RandomDataset:
         self.seed = seed
 
     def _count_template_tokens(self) -> int:
-        return estimate_chat_input_prompt_tokens(
-            tokenizer=self.tokenizer,
-            chat_input=ChatCompletionInput(
-                messages=[ChatCompletionMessage(role="user", content="")]
-            ),
-        )
+        return ChatCompletionInput(
+            messages=[ChatCompletionMessage(role="user", content="")]
+        ).estimate_prompt_tokens_length(self.tokenizer)
 
     def _build_candidate_token_ids(self) -> list[int]:
         """Build token ids that are safe to sample for prompt generation.
@@ -165,12 +161,9 @@ class RandomDataset:
         return content_budget
 
     def _estimate_prompt_tokens(self, prompt_text: str) -> int:
-        return estimate_chat_input_prompt_tokens(
-            tokenizer=self.tokenizer,
-            chat_input=ChatCompletionInput(
-                messages=[ChatCompletionMessage(role="user", content=prompt_text)]
-            ),
-        )
+        return ChatCompletionInput(
+            messages=[ChatCompletionMessage(role="user", content=prompt_text)]
+        ).estimate_prompt_tokens_length(self.tokenizer)
 
     def iter_requests(self) -> Iterable[LLMRequest]:
         """Yield synthetic benchmark requests with random prompt lengths.
