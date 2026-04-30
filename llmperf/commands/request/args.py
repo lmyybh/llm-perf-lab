@@ -7,6 +7,7 @@ from typing import Literal, Optional, Union, cast
 import typer
 from pydantic import BaseModel
 
+from llmperf.commands.bench.args import DatasetMode
 from llmperf.common import (
     ChatCompletionInput,
     ChatCompletionMessage,
@@ -18,7 +19,7 @@ from llmperf.common import (
 
 DEFAULT_SYSTEM_PROMPT = "你是一个专业的助手"
 UrlMode = Literal["openai", "generate"]
-OpenaiInputMode = Literal["messages", "file", "user"]
+OpenaiInputMode = Literal["messages", "file", "user", "dataset"]
 ToolChoiceMode = Literal["auto", "required", "none"]
 
 
@@ -117,6 +118,16 @@ class RequestCommandArgs(BaseModel):
         file (Optional[Path]): Optional file containing JSON chat messages.
         user (Optional[str]): Optional user prompt text.
         system (Optional[str]): Optional system prompt text.
+        dataset_file (Optional[Path]): Optional dataset file used when
+            selecting one request by target prompt length.
+        dataset_mode (DatasetMode): Dataset parser or generator mode used for
+            target-length request selection.
+        target_input_tokens (Optional[int]): Target prompt token count that
+            enables dataset selection mode.
+        input_token_tolerance (int): Absolute prompt token tolerance around the
+            target length.
+        with_tools (bool): Whether to select only dataset samples with
+            non-empty tools and include those tools in the request.
         tools (Optional[str]): Optional JSON-encoded tool declarations.
         tool_choice (Optional[str]): Tool selection mode or JSON-encoded tool
             choice. When omitted, file-provided tool choice is preserved.
@@ -150,6 +161,13 @@ class RequestCommandArgs(BaseModel):
 
     # generate mode
     text: Optional[str] = None
+
+    # dataset selection mode
+    dataset_file: Optional[Path] = None
+    dataset_mode: DatasetMode = DatasetMode.openai
+    target_input_tokens: Optional[int] = None
+    input_token_tolerance: int = 64
+    with_tools: bool = False
 
     tools: Optional[str] = None
     tool_choice: Optional[str] = None
@@ -190,13 +208,23 @@ class RequestCommandArgs(BaseModel):
         if self.text is not None:
             raise typer.BadParameter("--text can only be used with a /generate URL")
 
+        has_dataset = self.target_input_tokens is not None
         has_messages = (
             self.messages_json is not None and self.messages_json.strip() != ""
         )
         has_file = self.file is not None
         has_user = self.user is not None and self.user.strip() != ""
 
+        if not has_dataset:
+            if self.dataset_file is not None:
+                raise typer.BadParameter(
+                    "--dataset-file requires --target-input-tokens"
+                )
+            if self.with_tools:
+                raise typer.BadParameter("--with-tools requires --target-input-tokens")
+
         selected: list[tuple[OpenaiInputMode, bool]] = [
+            ("dataset", has_dataset),
             ("messages", has_messages),
             ("file", has_file),
             ("user", has_user),
@@ -205,18 +233,63 @@ class RequestCommandArgs(BaseModel):
 
         if len(enabled_modes) == 0:
             raise typer.BadParameter(
-                "must provide exactly one of --messages, --file, or --user"
+                "must provide exactly one of --target-input-tokens, --messages, "
+                "--file, or --user"
             )
 
         if len(enabled_modes) > 1:
             raise typer.BadParameter(
-                "options --messages, --file, and --user are mutually exclusive"
+                "options --target-input-tokens, --messages, --file, and --user "
+                "are mutually exclusive"
             )
 
         if self.system is not None and not has_user:
             raise typer.BadParameter("--system can only be used with --user")
 
+        if has_dataset:
+            self.validate_dataset_input_mode()
+
         return enabled_modes[0]
+
+    def validate_dataset_input_mode(self) -> None:
+        """Validate options that are only meaningful for dataset selection.
+
+        Raises:
+            typer.BadParameter: Raised when dataset selection options conflict
+                with manual request inputs or unsupported URL modes.
+        """
+        if self.target_input_tokens is None:
+            return
+
+        if self.system is not None:
+            raise typer.BadParameter(
+                "--system cannot be used with --target-input-tokens"
+            )
+
+        if self.tools is not None or self.tool_choice is not None:
+            raise typer.BadParameter(
+                "--tools and --tool-choice cannot be used with "
+                "--target-input-tokens; use --with-tools to select dataset "
+                "tool samples"
+            )
+
+        if self.dataset_mode == DatasetMode.random:
+            if self.dataset_file is not None:
+                raise typer.BadParameter(
+                    "--dataset-file cannot be used with --dataset-mode random"
+                )
+            if self.with_tools:
+                raise typer.BadParameter(
+                    "--with-tools cannot be used with --dataset-mode random"
+                )
+            return
+
+        if self.dataset_file is None:
+            raise typer.BadParameter("file-backed dataset modes require --dataset-file")
+        if not self.dataset_file.is_file():
+            raise typer.BadParameter(
+                "file-backed dataset modes require a valid --dataset-file path"
+            )
 
     def parse_generate_input(self) -> GenerateInput:
         """Parse command arguments into a generate input.
@@ -237,6 +310,12 @@ class RequestCommandArgs(BaseModel):
             forbidden_options.append("--user")
         if self.system is not None:
             forbidden_options.append("--system")
+        if self.target_input_tokens is not None:
+            forbidden_options.append("--target-input-tokens")
+        if self.dataset_file is not None:
+            forbidden_options.append("--dataset-file")
+        if self.with_tools:
+            forbidden_options.append("--with-tools")
 
         if forbidden_options:
             options = ", ".join(forbidden_options)
@@ -261,6 +340,10 @@ class RequestCommandArgs(BaseModel):
         """
         mode = self.detect_openai_input_mode()
 
+        if mode == "dataset":
+            raise typer.BadParameter(
+                "dataset input mode must be parsed by the request service"
+            )
         if mode == "messages":
             assert self.messages_json is not None
             messages = handle_messages_mode(self.messages_json)

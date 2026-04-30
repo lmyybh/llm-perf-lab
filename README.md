@@ -33,13 +33,14 @@ llmperf bench --help
 
 ### 输入方式
 
-当 URL 不以 `/generate` 结尾时，使用聊天请求模式。以下三种输入方式必须且只能选择一种：
+当 URL 不以 `/generate` 结尾时，使用聊天请求模式。以下四种输入方式必须且只能选择一种：
 
 1. `--messages`：直接传入 JSON 数组字符串
 2. `--file`：从文件读取 JSON 消息数组
 3. `--user`：直接提供用户输入，可搭配 `--system`
+4. `--target-input-tokens`：从 dataset 中选择一条接近目标输入长度的请求
 
-当 URL 以 `/generate` 结尾时，使用文本生成模式，必须提供非空 `--text`，且不能同时使用 `--messages`、`--file`、`--user` 或 `--system`。
+当 URL 以 `/generate` 结尾时，使用文本生成模式，必须提供非空 `--text`，且不能同时使用 `--messages`、`--file`、`--user`、`--system` 或 dataset 选择参数。
 
 ### 示例
 
@@ -66,6 +67,35 @@ llmperf request \
 ```
 
 ```bash
+# 从文件 dataset 中选择第一条 prompt token 数落在目标范围内的请求
+llmperf request \
+  --url "http://localhost:8000/v1/chat/completions" \
+  --dataset-file dataset.jsonl \
+  --dataset-mode openai-jsonl \
+  --target-input-tokens 2048 \
+  --input-token-tolerance 64 \
+  --tokenizer-path "/path/to/tokenizer"
+```
+
+```bash
+# 从 zss-jsonl 中选择带 tools 的样本，tool_choice 会按 auto 发送
+llmperf request \
+  --dataset-file dataset.jsonl \
+  --dataset-mode zss-jsonl \
+  --target-input-tokens 2048 \
+  --with-tools \
+  --tokenizer-path "/path/to/tokenizer"
+```
+
+```bash
+# 生成一条目标输入长度附近的随机请求
+llmperf request \
+  --dataset-mode random \
+  --target-input-tokens 2048 \
+  --tokenizer-path "/path/to/tokenizer"
+```
+
+```bash
 # 带采样参数的完整示例
 llmperf request \
   --url "http://localhost:8000/v1/chat/completions" \
@@ -84,6 +114,11 @@ llmperf request \
 
 - `--url`：目标 OpenAI 兼容接口地址
 - `--text`：`/generate` 文本生成模式的输入文本
+- `--dataset-file`：dataset 文件路径，文件型 dataset 模式必填
+- `--dataset-mode`：dataset 解析模式，支持 `openai-jsonl`、`zss-jsonl`、`random`
+- `--target-input-tokens`：目标 prompt token 数；传入后启用 dataset 选择模式
+- `--input-token-tolerance`：目标 token 数的绝对容忍范围，默认 `64`
+- `--with-tools/--without-tools`：是否只选择带非空 `tools` 的 dataset 样本，默认 `--without-tools`
 - `--model`：请求中携带的模型名
 - `--tokenizer-path`：本地 prompt token 估算优先使用的 tokenizer 路径
 - `--rid`：可选请求标识
@@ -99,6 +134,16 @@ llmperf request \
 - `--timeout`：请求超时时间
 
 当后端未返回 `prompt_tokens` 时，`request` 和 `bench` 会优先使用本地 tokenizer 对输入进行估算。若同时提供 `--tokenizer-path` 和 `--model`，会优先使用 `--tokenizer-path`。
+
+### Dataset 选择模式
+
+`request` 的 dataset 选择模式通过 `--target-input-tokens` 启用，只适用于 OpenAI 兼容聊天接口，不支持 `/generate`。该模式会按完整 `messages` 经 tokenizer chat template 后的 prompt token 数筛选样本，因此必须提供 `--tokenizer-path` 或可加载 tokenizer 的 `--model`。
+
+文件型 dataset 会复用 `bench` 的现有 dataset 解析规则，不改变 `openai-jsonl` 或 `zss-jsonl` 的字段要求。选择时按文件顺序扫描，返回第一条 prompt token 数落在 `[max(1, target - tolerance), target + tolerance]` 内的样本。默认 `--without-tools` 会跳过带非空 `tools` 的样本；`--with-tools` 只选择带非空 `tools` 的样本，并把这些 tools 带入请求，`tool_choice` 按 `auto` 发送。
+
+dataset 模式只保留样本中的 `messages`；使用 `--with-tools` 时同时保留样本中的 `tools`。`model`、采样参数、`rid`、`stream` 和 thinking 设置都使用 `request` CLI 的默认值或显式传入值。该模式与 `--messages`、`--file`、`--user`、`--system`、`--tools` 和 `--tool-choice` 互斥。
+
+`random` 模式不读取 `--dataset-file`，也不支持 `--with-tools`。它会用 tokenizer 随机生成一条 user message，并校验实际 prompt token 数是否落在目标范围内；输出长度仍由 `request --max-completion-tokens` 决定。
 
 ## `bench` 命令
 

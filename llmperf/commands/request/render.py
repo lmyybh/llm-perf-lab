@@ -95,6 +95,11 @@ def render_header(stream: bool) -> None:
     console.rule("Stream") if stream else console.rule("No-Stream")
 
 
+def render_dataset_selection(description: str) -> None:
+    """Render the dataset sample selected for this request."""
+    console.print(description, style="cyan")
+
+
 def build_response_summary(response: LLMResponse) -> Table:
     """Build a summary table for the aggregated response.
 

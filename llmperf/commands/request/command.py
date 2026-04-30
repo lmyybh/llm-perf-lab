@@ -3,6 +3,7 @@
 from llmperf.commands.request.args import RequestCommandArgs
 from llmperf.commands.request.render import (
     create_chunk_printer,
+    render_dataset_selection,
     render_header,
     render_response,
 )
@@ -20,6 +21,10 @@ def run_request_command(args: RequestCommandArgs) -> LLMResponse:
         LLMResponse: Aggregated backend response.
     """
     render_header(args.stream)
-    response = execute_request(args, on_chunk=create_chunk_printer(args.stream))
+    response = execute_request(
+        args,
+        on_chunk=create_chunk_printer(args.stream),
+        on_dataset_selection=render_dataset_selection,
+    )
     render_response(response, stream=args.stream)
     return response

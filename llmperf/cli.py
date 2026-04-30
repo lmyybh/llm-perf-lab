@@ -33,7 +33,7 @@ def request(
     messages: Annotated[
         Optional[str],
         typer.Option(
-            help="Chat messages as a JSON array. Mutually exclusive with --file and --user."
+            help="Chat messages as a JSON array. Mutually exclusive with --file, --user, and --target-input-tokens."
         ),
     ] = None,
     file: Annotated[
@@ -44,13 +44,13 @@ def request(
             dir_okay=False,
             readable=True,
             resolve_path=True,
-            help="Path to a file containing chat messages. Mutually exclusive with --messages and --user.",
+            help="Path to a file containing chat messages. Mutually exclusive with --messages, --user, and --target-input-tokens.",
         ),
     ] = None,
     user: Annotated[
         Optional[str],
         typer.Option(
-            help="User prompt text. Mutually exclusive with --messages and --file."
+            help="User prompt text. Mutually exclusive with --messages, --file, and --target-input-tokens."
         ),
     ] = None,
     system: Annotated[
@@ -60,6 +60,41 @@ def request(
         ),
     ] = None,
     text: Annotated[Optional[str], typer.Option(help="Generate text")] = None,
+    dataset_file: Annotated[
+        Optional[Path],
+        typer.Option(
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+            help="Path to a dataset file used with --target-input-tokens.",
+        ),
+    ] = None,
+    dataset_mode: Annotated[
+        DatasetMode,
+        typer.Option(help="Dataset mode used to select one request sample."),
+    ] = DatasetMode.openai,
+    target_input_tokens: Annotated[
+        Optional[int],
+        typer.Option(
+            min=1,
+            help="Target prompt token count for selecting one dataset sample.",
+        ),
+    ] = None,
+    input_token_tolerance: Annotated[
+        int,
+        typer.Option(
+            min=0,
+            help="Allowed absolute token tolerance around --target-input-tokens.",
+        ),
+    ] = 64,
+    with_tools: Annotated[
+        bool,
+        typer.Option(
+            "--with-tools/--without-tools",
+            help="Select only dataset samples with non-empty tools and include those tools in the request.",
+        ),
+    ] = False,
     tools: Annotated[
         Optional[str],
         typer.Option(
@@ -148,6 +183,11 @@ def request(
         user=user,
         system=system,
         text=text,
+        dataset_file=dataset_file,
+        dataset_mode=dataset_mode,
+        target_input_tokens=target_input_tokens,
+        input_token_tolerance=input_token_tolerance,
+        with_tools=with_tools,
         tools=tools,
         tool_choice=tool_choice,
         model=model,
