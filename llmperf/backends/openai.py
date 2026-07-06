@@ -138,6 +138,7 @@ class OpenAIChatBackend(LLMBackend):
             "stream": request.stream,
             "rid": request.rid,
             "chat_template_kwargs": request.chat_template_kwargs,
+            "priority": request.priority,
         }
         if request.model is not None:
             payload["model"] = request.model

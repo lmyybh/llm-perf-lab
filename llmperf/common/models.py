@@ -223,6 +223,7 @@ class LLMRequest(BaseModel):
     stream: bool = True
     rid: Optional[str] = None
     chat_template_kwargs: Optional[ChatTemplateKwargs] = None
+    priority: Optional[int] = None
     extra: ExtraPayload = Field(default_factory=dict)
 
 

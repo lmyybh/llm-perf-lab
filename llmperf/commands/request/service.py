@@ -55,6 +55,7 @@ def build_llm_request(args: RequestCommandArgs) -> LLMRequest:
         stream=args.stream,
         rid=args.rid,
         chat_template_kwargs={"enable_thinking": args.enable_thinking},
+        priority=args.priority,
         extra={
             "prompt_tokens": (
                 input.estimate_prompt_tokens_length(tokenizer)
@@ -106,6 +107,7 @@ def build_dataset_llm_request(
         stream=args.stream,
         rid=args.rid,
         chat_template_kwargs={"enable_thinking": args.enable_thinking},
+        priority=args.priority,
         extra={"prompt_tokens": selection.prompt_tokens},
     )
 

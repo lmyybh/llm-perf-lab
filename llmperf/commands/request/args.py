@@ -181,6 +181,7 @@ class RequestCommandArgs(BaseModel):
     frequency_penalty: float = 0.0
     repetition_penalty: float = 1.0
     max_completion_tokens: Optional[int] = 128
+    priority: Optional[int] = None
     ignore_eos: bool = False
     seed: Optional[int] = None
 

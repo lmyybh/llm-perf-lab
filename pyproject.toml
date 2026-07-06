@@ -12,6 +12,7 @@ dependencies = [
     "tqdm",
     "typer",
     "typing-extensions",
+    "jinja2",
 ]
 
 [build-system]

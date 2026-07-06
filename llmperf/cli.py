@@ -153,6 +153,13 @@ def request(
         Optional[int],
         typer.Option(min=1, help="Maximum number of completion tokens to generate."),
     ] = None,
+    priority: Annotated[
+        Optional[int],
+        typer.Option(
+            min=0,
+            help="Optional request priority. Higher values indicate higher priority.",
+        ),
+    ] = None,
     ignore_eos: Annotated[
         bool,
         typer.Option("--ignore-eos", help="Whether to ignore the EOS token."),
@@ -198,6 +205,7 @@ def request(
         frequency_penalty=frequency_penalty,
         repetition_penalty=repetition_penalty,
         max_completion_tokens=max_completion_tokens,
+        priority=priority,
         ignore_eos=ignore_eos,
         seed=seed,
         enable_thinking=enable_thinking,
